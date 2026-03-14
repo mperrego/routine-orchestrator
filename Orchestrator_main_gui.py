@@ -1,17 +1,17 @@
 """
-Routine Orchestrator Main GUI
-----------------------------
 Author: Michael
-Version: 6.7 (Audio Engine Sync & Final Labels)
-
-Fixes:
-- Updated audio_engine call to 'play_audio' to fix AttributeError.
-- All groups correctly labeled "Actions" and "Edit Actions".
-- Includes Delete Selection and Double-Click to Edit.
+Project: Routine Orchestrator
+File: Orchestrator_main_gui.py
+Description: Primary application entry point. Manages the main GUI, 
+             routine execution threads, and file persistence.
+Version: 6.7
+Date: 2026-03-14
 """
+
 import customtkinter as ctk
 from tkinter import filedialog, simpledialog
 import audio_engine
+import editors
 import threading
 import os
 import sys
@@ -19,92 +19,14 @@ import pygame
 import json
 
 class Action:
+    """Standard data structure for a routine step."""
     def __init__(self, action_type, data, wait_on_completion=True):
         self.type = action_type
         self.data = data
         self.wait_on_completion = wait_on_completion
 
-class MultipleMp3Editor(ctk.CTkToplevel):
-    def __init__(self, parent, action):
-        super().__init__(parent)
-        self.title("Collection Configuration")
-        self.geometry("1000x800")
-        self.action = action
-        self.parent_app = parent
-        self.attributes("-topmost", True)
-        self.repeat_entries = [] 
-
-        self.list_frame = ctk.CTkScrollableFrame(self)
-        self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        ctrl = ctk.CTkFrame(self)
-        ctrl.pack(fill="x", padx=20, pady=10)
-        
-        self.mode_var = ctk.StringVar(value="Random")
-        ctk.CTkOptionMenu(ctrl, variable=self.mode_var, values=["Random", "Sequential"]).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="Add Folder", command=self.add_folder).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="Save & Close", fg_color="green", command=self.close_and_refresh).pack(side="right", padx=5)
-        
-        self.update_list()
-
-    def sync_data(self):
-        for idx, entry in self.repeat_entries:
-            val = entry.get()
-            self.action.data[idx]["repeat"] = int(val) if val.isdigit() else 1
-
-    def close_and_refresh(self):
-        self.sync_data()
-        self.parent_app.update_display()
-        self.destroy()
-
-    def add_folder(self):
-        self.sync_data()
-        self.attributes("-topmost", False) 
-        f = filedialog.askopenfilename(title="Pick a file inside the folder")
-        if f:
-            folder = os.path.dirname(f)
-            self.action.data.append({"path": folder, "mode": self.mode_var.get(), "repeat": 1})
-            self.update_list()
-        self.attributes("-topmost", True)
-
-    def update_list(self):
-        for w in self.list_frame.winfo_children(): w.destroy()
-        self.repeat_entries = []
-        valid_exts = ('.mp3', '.wav', '.m4a')
-        for i, item in enumerate(self.action.data):
-            row = ctk.CTkFrame(self.list_frame)
-            row.pack(fill="x", pady=10, padx=5)
-            header = ctk.CTkFrame(row, fg_color="transparent")
-            header.pack(fill="x", padx=10, pady=5)
-            ctk.CTkLabel(header, text=f"Folder: {os.path.basename(item['path'])}", font=("Arial", 14, "bold")).pack(side="left")
-            ctk.CTkButton(header, text=item['mode'], width=90, command=lambda idx=i: self.toggle_mode(idx)).pack(side="left", padx=20)
-            ctk.CTkLabel(header, text="Play:").pack(side="left")
-            
-            ent = ctk.CTkEntry(header, width=50)
-            ent.insert(0, str(item.get('repeat', 1)))
-            ent.pack(side="left", padx=5)
-            self.repeat_entries.append((i, ent))
-            
-            ctk.CTkButton(header, text="Remove", fg_color="darkred", width=70, command=lambda idx=i: self.remove_folder(idx)).pack(side="right")
-            
-            try:
-                files = sorted([f for f in os.listdir(item['path']) if f.lower().endswith(valid_exts)])
-                file_text = "\n".join(files) if files else "Empty Folder"
-            except: file_text = "Error reading folder."
-            txt = ctk.CTkTextbox(row, height=80, font=("Consolas", 11))
-            txt.pack(fill="x", padx=10, pady=(0, 5))
-            txt.insert("1.0", file_text); txt.configure(state="disabled")
-
-    def toggle_mode(self, idx):
-        self.sync_data()
-        self.action.data[idx]["mode"] = "Sequential" if self.action.data[idx]["mode"] == "Random" else "Random"
-        self.update_list()
-
-    def remove_folder(self, idx):
-        self.action.data.pop(idx)
-        self.update_list()
-
 class RoutineApp(ctk.CTk):
+    """Main Dashboard for the Routine Orchestrator."""
     def __init__(self):
         super().__init__()
         self.title("Routine Orchestrator")
@@ -113,12 +35,13 @@ class RoutineApp(ctk.CTk):
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
 
-        # --- Top Menu ---
+        # --- Top Menu (I/O) ---
         f_io = ctk.CTkFrame(self)
         f_io.pack(fill="x", padx=20, pady=(10, 0))
         ctk.CTkButton(f_io, text="Save Routine", command=self.save_routine).pack(side="left", padx=10, pady=5)
         ctk.CTkButton(f_io, text="Load Routine", command=self.load_routine).pack(side="left", padx=10, pady=5)
 
+        # --- Main Scrollable List ---
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -157,23 +80,28 @@ class RoutineApp(ctk.CTk):
 
         self.status = ctk.CTkLabel(self, text="Ready", anchor="w", text_color="#00d4ff", font=("Arial", 12, "bold"))
         self.status.pack(side="bottom", fill="x", padx=20, pady=5)
+        
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def safe_status_update(self, msg):
+        """Ensures the status label is updated safely across threads."""
         try: self.status.configure(text=msg)
         except: pass
 
     def on_closing(self):
+        """Safely shuts down the audio engine and closes the app."""
         self.is_running = False
         pygame.mixer.quit(); self.destroy(); sys.exit()
 
     def save_routine(self):
+        """Serializes current action list to a JSON file."""
         path = filedialog.asksaveasfilename(defaultextension=".json")
         if path:
             data = [{"type": a.type, "data": a.data, "wait": a.wait_on_completion} for a in self.actions]
             with open(path, 'w') as f: json.dump(data, f, indent=4)
 
     def load_routine(self):
+        """Deserializes action list from a JSON file and updates the UI."""
         path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
         if path:
             with open(path, 'r') as f: data = json.load(f)
@@ -181,6 +109,7 @@ class RoutineApp(ctk.CTk):
             self.update_display()
 
     def add_action(self, atype):
+        """Creates a new action based on type and adds it to the list."""
         data = None
         if atype == "Single mp3": data = filedialog.askopenfilename()
         elif atype == "Multiple mp3":
@@ -191,7 +120,7 @@ class RoutineApp(ctk.CTk):
                 self.actions.append(new_action)
                 self.selected_index.set(len(self.actions)-1)
                 self.update_display()
-                MultipleMp3Editor(self, new_action)
+                editors.MultipleMp3Editor(self, new_action)
                 return
         elif atype == "Wait": data = simpledialog.askinteger("Wait", "Seconds:")
         elif atype == "Script": data = filedialog.askopenfilename(filetypes=[("Python", "*.py")])
@@ -201,6 +130,7 @@ class RoutineApp(ctk.CTk):
             self.update_display()
 
     def update_display(self):
+        """Refreshes the scrollable list of actions in the main window."""
         for w in self.list_frame.winfo_children(): w.destroy()
         for i, a in enumerate(self.actions):
             row_frame = ctk.CTkFrame(self.list_frame)
@@ -221,6 +151,7 @@ class RoutineApp(ctk.CTk):
             rb.bind("<Double-1>", on_double_click)
             row_frame.bind("<Double-1>", on_double_click)
 
+            # Sub-display for folder collections
             if a.type == "Multiple mp3":
                 sub_list = ctk.CTkFrame(self.list_frame, fg_color="transparent")
                 sub_list.pack(fill="x", padx=45)
@@ -236,11 +167,12 @@ class RoutineApp(ctk.CTk):
                 cb.pack(side="right", padx=10)
 
     def edit_action(self):
+        """Opens the appropriate editor for the currently selected action."""
         idx = self.selected_index.get()
         if idx < 0 or idx >= len(self.actions): return
         a = self.actions[idx]
         if a.type == "Multiple mp3":
-            MultipleMp3Editor(self, a)
+            editors.MultipleMp3Editor(self, a)
         elif a.type == "Wait":
             v = simpledialog.askinteger("Edit Wait", "Seconds:", initialvalue=a.data)
             if v: a.data = v; self.update_display()
@@ -249,6 +181,7 @@ class RoutineApp(ctk.CTk):
             if f: a.data = f; self.update_display()
 
     def move_action(self, d):
+        """Swaps the selected action's position in the routine list."""
         idx = self.selected_index.get()
         if 0 <= idx + d < len(self.actions):
             self.actions[idx], self.actions[idx+d] = self.actions[idx+d], self.actions[idx]
@@ -256,29 +189,35 @@ class RoutineApp(ctk.CTk):
             self.update_display()
 
     def remove_action(self):
+        """Deletes the selected action from the routine."""
         idx = self.selected_index.get()
         if 0 <= idx < len(self.actions):
             self.actions.pop(idx)
             self.selected_index.set(-1)
             self.update_display()
 
-    def toggle_wait(self, i): self.actions[i].wait_on_completion = not self.actions[i].wait_on_completion
+    def toggle_wait(self, i): 
+        """Toggles the 'wait on completion' flag for an action."""
+        self.actions[i].wait_on_completion = not self.actions[i].wait_on_completion
     
     def stop_routine(self): 
+        """Immediately halts routine execution and stops audio."""
         self.is_running = False
         pygame.mixer.music.stop()
 
     def run_thread(self): 
+        """Spawns a background thread to run the routine without freezing the GUI."""
         if self.actions: threading.Thread(target=self.run_routine, daemon=True).start()
 
     def run_routine(self):
+        """Sequentially executes each action in the routine."""
         self.is_running = True
         self.play_btn.configure(state="disabled"); self.stop_btn.configure(state="normal")
         for a in self.actions:
             if not self.is_running: break
             if a.type == "Single mp3":
                 self.safe_status_update(f"Playing: {os.path.basename(a.data)}")
-                audio_engine.play_audio(a.data) # MATCHES VERSION 3.5 ENGINE
+                audio_engine.play_audio(a.data)
             elif a.type == "Multiple mp3":
                 for folder in a.data:
                     for i in range(folder.get('repeat', 1)):
