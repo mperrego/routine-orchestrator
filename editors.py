@@ -22,6 +22,8 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.attributes("-topmost", True)
         self.repeat_entries = []
         self.setup_editor_menu()
+        # Default to the parent app's last used directory
+        self.editor_last_dir = parent.last_used_dir
 
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -70,21 +72,35 @@ class AudioSequenceEditor(ctk.CTkToplevel):
     def add_file(self):
         self.sync_data()
         self.attributes("-topmost", False) 
-        f = filedialog.askopenfilename(title="Select Audio File")
+        f = filedialog.askopenfilename(
+            initialdir=self.editor_last_dir, # Start at last used
+            title="Select Audio File"
+        )
         if f:
+            self.editor_last_dir = os.path.dirname(f) # Update tracker
+            self.parent_app.last_used_dir = self.editor_last_dir # Update main app too
             self.action.data.append({"path": f, "mode": "Single", "repeat": 1})
             self.update_list()
         self.attributes("-topmost", True)
 
+
+
     def add_folder(self):
         self.sync_data()
         self.attributes("-topmost", False) 
-        f = filedialog.askopenfilename(title="Pick any file inside the target folder")
+        f = filedialog.askopenfilename(
+            initialdir=self.editor_last_dir,
+            title="Pick any file inside the target folder"
+        )
         if f:
             folder = os.path.dirname(f)
+            self.editor_last_dir = folder
+            self.parent_app.last_used_dir = folder
             self.action.data.append({"path": folder, "mode": "Random", "repeat": 1})
             self.update_list()
         self.attributes("-topmost", True)
+
+
 
     def update_list(self):
         """Rebuilds the list and restores the file-preview text box for folders."""

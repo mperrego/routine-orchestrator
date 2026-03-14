@@ -40,6 +40,7 @@ class RoutineApp(ctk.CTk):
         if not os.path.exists(self.routines_dir):
             os.makedirs(self.routines_dir)
         # --------------------------------
+        self.last_used_dir = self.routines_dir # Default to Routines folder
 
 
         # --- Top Menu ---
@@ -227,7 +228,6 @@ class RoutineApp(ctk.CTk):
             self.update_display()
 
             
-
     def add_action(self, atype):
         if atype == "Audio":
             new_action = Action("Audio", [])
@@ -239,8 +239,15 @@ class RoutineApp(ctk.CTk):
             v = simpledialog.askinteger("Wait", "Seconds:")
             if v: self.actions.append(Action("Wait", v)); self.update_display()
         elif atype == "Script":
-            f = filedialog.askopenfilename(filetypes=[("Python", "*.py")])
-            if f: self.actions.append(Action("Script", f)); self.update_display()
+            f = filedialog.askopenfilename(
+                initialdir=self.last_used_dir, # Use the tracker
+                filetypes=[("Python", "*.py")]
+            )
+            if f:
+                self.last_used_dir = os.path.dirname(f) # Update tracker
+                self.actions.append(Action("Script", f))
+                self.update_display()
+    
 
     def update_display(self):
         for w in self.list_frame.winfo_children(): w.destroy()
@@ -286,9 +293,12 @@ class RoutineApp(ctk.CTk):
         elif a.type == "Wait":
             v = simpledialog.askinteger("Edit Wait", "Seconds:", initialvalue=a.data)
             if v: a.data = v; self.update_display()
-        else:
-            f = filedialog.askopenfilename()
-            if f: a.data = f; self.update_display()
+        elif a.type == "Script":
+            f = filedialog.askopenfilename(initialdir=os.path.dirname(a.data))
+            if f:
+                self.last_used_dir = os.path.dirname(f)
+                a.data = f
+                self.update_display()
 
     def move_action(self, d):
         idx = self.selected_index.get()
