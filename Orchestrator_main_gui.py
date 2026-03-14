@@ -2,8 +2,8 @@
 Author: Michael
 Project: Routine Orchestrator
 File: Orchestrator_main_gui.py
-Description: Restored EXIT button and ensured status bar connectivity.
-Version: 6.9.1
+Description: Added SKIP button and renamed folder addition button.
+Version: 7.0
 Date: 2026-03-14
 """
 
@@ -67,20 +67,85 @@ class RoutineApp(ctk.CTk):
         # --- Playback Bar ---
         f_run = ctk.CTkFrame(self)
         f_run.pack(fill="x", padx=20, pady=10)
-        self.play_btn = ctk.CTkButton(f_run, text="RUN ROUTINE", fg_color="green", font=("Arial", 14, "bold"), command=self.run_thread)
+        
+        # 1. Create the Play Button
+        self.play_btn = ctk.CTkButton(f_run, text="RUN ROUTINE", fg_color="green", 
+                                     font=("Arial", 14, "bold"), command=self.run_thread)
         self.play_btn.pack(side="left", fill="x", expand=True, padx=5)
         
-        self.stop_btn = ctk.CTkButton(f_run, text="STOP", fg_color="darkred", state="disabled", command=self.stop_routine)
+        # 2. Create the Skip Button (Must be defined BEFORE packing)
+        self.skip_btn = ctk.CTkButton(f_run, text="SKIP", fg_color="#cc8400", 
+                                     state="disabled", width=80, command=self.skip_item)
+        self.skip_btn.pack(side="left", padx=5)
+
+        # 3. Create the Stop Button
+        self.stop_btn = ctk.CTkButton(f_run, text="STOP", fg_color="darkred", 
+                                     state="disabled", width=80, command=self.stop_routine)
         self.stop_btn.pack(side="left", padx=5)
 
-        # --- RESTORED: Exit Button ---
-        self.exit_btn = ctk.CTkButton(f_run, text="EXIT", fg_color="#333333", width=80, command=self.on_closing)
+        # 4. Create the Exit Button
+        self.exit_btn = ctk.CTkButton(f_run, text="EXIT", fg_color="#333333", 
+                                     width=80, command=self.on_closing)
         self.exit_btn.pack(side="right", padx=5)
 
-        self.status = ctk.CTkLabel(self, text="Ready", anchor="w", text_color="#00d4ff", font=("Arial", 12, "bold"))
+        # --- Status Bar ---
+        self.status = ctk.CTkLabel(self, text="Ready", anchor="w", text_color="#00d4ff", 
+                                   font=("Arial", 12, "bold"))
         self.status.pack(side="bottom", fill="x", padx=20, pady=5)
         
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def skip_item(self):
+        """Interrupts current audio. The loop will then move to the next item."""
+        audio_engine.stop_audio()
+        self.safe_status_update("Skipping current item...") 
+
+    def stop_routine(self):
+        """Stops the entire routine and the audio."""
+        self.is_running = False
+        audio_engine.stop_audio()
+        self.safe_status_update("Routine Stopped.")
+
+    def run_routine(self):
+        """Sequentially executes actions and handles the Skip/Stop states."""
+        self.is_running = True
+        
+        # UI State Management
+        self.after(0, lambda: self.play_btn.configure(state="disabled"))
+        self.after(0, lambda: self.stop_btn.configure(state="normal"))
+        self.after(0, lambda: self.skip_btn.configure(state="normal"))
+        
+        for a in self.actions:
+            if not self.is_running: 
+                break
+            
+            if a.type == "Audio":
+                for item in a.data:
+                    repeat_count = item.get('repeat', 1)
+                    for i in range(repeat_count):
+                        if not self.is_running: break
+                        
+                        # Get filename and update status BEFORE playing
+                        full_path, display_name = audio_engine.get_next_filename(item)
+                        msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
+                        self.after(0, lambda m=msg: self.safe_status_update(m))
+                        
+                        if full_path:
+                            audio_engine.play_audio(full_path)
+            
+            elif a.type == "Wait":
+                self.after(0, lambda: self.safe_status_update(f"Wait: {a.data}s..."))
+                audio_engine.wait_action(a.data)
+                
+            elif a.type == "Script":
+                self.after(0, lambda: self.safe_status_update(f"Running: {os.path.basename(a.data)}"))
+                audio_engine.run_external_script(a.data)
+        
+        # Reset UI when finished
+        self.safe_status_update("Ready")
+        self.after(0, lambda: self.play_btn.configure(state="normal"))
+        self.after(0, lambda: self.stop_btn.configure(state="disabled"))
+        self.after(0, lambda: self.skip_btn.configure(state="disabled"))
 
     def safe_status_update(self, msg):
         """Ensures the status label is updated safely across threads."""
@@ -186,13 +251,18 @@ class RoutineApp(ctk.CTk):
         pygame.mixer.music.stop()
 
     def run_thread(self): 
-        if self.actions: threading.Thread(target=self.run_routine, daemon=True).start()
+        """Pre-enables buttons on the main thread, then starts the routine."""
+        if self.actions:
+            # Enable buttons here, BEFORE the thread starts
+            self.play_btn.configure(state="disabled")
+            self.stop_btn.configure(state="normal")
+            self.skip_btn.configure(state="normal")
+            
+            threading.Thread(target=self.run_routine, daemon=True).start()
 
     def run_routine(self):
-        """Pre-fetches filename to update status bar BEFORE playback begins."""
+        """Executes the routine logic."""
         self.is_running = True
-        self.play_btn.configure(state="disabled")
-        self.stop_btn.configure(state="normal")
         
         for a in self.actions:
             if not self.is_running: break
@@ -203,28 +273,25 @@ class RoutineApp(ctk.CTk):
                     for i in range(repeat_count):
                         if not self.is_running: break
                         
-                        # 1. Get the name first
                         full_path, display_name = audio_engine.get_next_filename(item)
-                        
-                        # 2. Update status BEFORE playing
                         msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
                         self.after(0, lambda m=msg: self.safe_status_update(m))
                         
-                        # 3. Now play (this line 'blocks' until finished)
                         if full_path:
                             audio_engine.play_audio(full_path)
             
-            elif a.type == "Wait":
-                self.safe_status_update(f"Wait: {a.data}s...")
-                audio_engine.wait_action(a.data)
-                
-            elif a.type == "Script":
-                self.safe_status_update(f"Running: {os.path.basename(a.data)}")
-                audio_engine.run_external_script(a.data)
-        
-        self.safe_status_update("Ready")
+            # ... (Wait and Script logic) ...
+
+        # When the loop finishes, reset the buttons
+        self.is_running = False
+        self.after(0, self.reset_ui_after_run)
+
+    def reset_ui_after_run(self):
+        """Restores the button states when the routine ends."""
         self.play_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
+        self.skip_btn.configure(state="disabled")
+        self.safe_status_update("Ready")
 
 if __name__ == "__main__":
     RoutineApp().mainloop()

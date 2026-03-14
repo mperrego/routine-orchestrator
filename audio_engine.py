@@ -2,9 +2,7 @@
 Author: Michael
 Project: Routine Orchestrator
 File: audio_engine.py
-Description: Split selection and playback logic to allow the GUI to 
-             display the filename before audio starts.
-Version: 4.2
+Version: 4.3
 Date: 2026-03-14
 """
 
@@ -17,10 +15,11 @@ from pydub import AudioSegment
 if not pygame.mixer.get_init():
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
+# --- THIS IS THE MISSING FUNCTION ---
 def get_next_filename(item_data):
     """
     Predicts the next file to be played without playing it.
-    Returns the full path and the display name.
+    Returns the (full_path, display_name).
     """
     path = item_data.get("path")
     if not os.path.exists(path):
@@ -29,7 +28,6 @@ def get_next_filename(item_data):
     if os.path.isfile(path):
         return path, os.path.basename(path)
     
-    # Directory Logic
     valid_exts = ('.mp3', '.wav', '.m4a')
     files = sorted([f for f in os.listdir(path) if f.lower().endswith(valid_exts)])
     if not files:
@@ -59,9 +57,14 @@ def get_next_filename(item_data):
         
     return os.path.join(path, chosen_file), chosen_file
 
+def stop_audio():
+    """Immediately halts the pygame mixer."""
+    pygame.mixer.music.stop()
+
 def play_audio(file_path):
-    """Handles playback only. The GUI now handles the naming."""
+    """Handles playback and monitors for interruptions."""
     try:
+        # (Handling for non-standard formats...)
         ext = file_path.lower()
         if not (ext.endswith('.mp3') or ext.endswith('.wav')):
             audio = AudioSegment.from_file(file_path)
@@ -77,4 +80,9 @@ def play_audio(file_path):
     except Exception as e:
         print(f"Engine Error: {e}")
 
-# ... [run_external_script and wait_action remain same] ...
+def run_external_script(script_path):
+    try: os.system(f"python \"{script_path}\"")
+    except Exception as e: print(f"Script Error: {e}")
+
+def wait_action(seconds):
+    time.sleep(seconds)
