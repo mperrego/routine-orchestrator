@@ -24,6 +24,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.setup_editor_menu()
         # Default to the parent app's last used directory
         self.editor_last_dir = parent.last_used_dir
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -33,7 +34,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         
         ctk.CTkButton(ctrl, text="+ Add Playing Single File", command=self.add_file).pack(side="left", padx=5)
         ctk.CTkButton(ctrl, text="+ Add Playing Multiple Files", command=self.add_folder).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="Save & Close", fg_color="green", command=self.close_and_refresh).pack(side="right", padx=5)
+        ctk.CTkButton(ctrl, text="Save & Close", fg_color="green", command=self.on_closing).pack(side="right", padx=5)
         
         self.update_list()
 
@@ -155,3 +156,17 @@ class AudioSequenceEditor(ctk.CTkToplevel):
     def remove_item(self, idx):
         self.action.data.pop(idx)
         self.update_list()
+
+    def on_closing(self):
+        """Final sync and cleanup before closing the window."""
+        self.sync_data() # Ensure the action's data list is up to date
+        
+        # Logic: If the user didn't add any files or folders, delete the action
+        if not self.action.data:
+            if self.action in self.parent_app.actions:
+                self.parent_app.actions.remove(self.action)
+                self.parent_app.safe_status_update("Empty audio action discarded.")
+        
+        # Refresh the main GUI to show the updated list
+        self.parent_app.update_display()
+        self.destroy()
