@@ -8,7 +8,7 @@ Date: 2026-03-14
 """
 
 import customtkinter as ctk
-from tkinter import filedialog, simpledialog
+from tkinter import filedialog, simpledialog, messagebox
 import audio_engine
 import editors
 import threading
@@ -116,35 +116,103 @@ class RoutineApp(ctk.CTk):
         
         # Window Close Protocol
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        import sys # Add to imports
+
+        # ... inside RoutineApp.__init__ ...
+        # After all UI is built, check for CLI arguments
+        if len(sys.argv) > 1:
+            # We use after() to wait 100ms for the GUI to fully render 
+            # before starting the heavy lifting
+            self.after(100, lambda: self.load_and_run_from_cli(sys.argv[1]))
+
+
+        # For Audio
+            if atype == "Audio":
+                # ... (your existing dialog logic) ...
+                self.actions.append(Action("Audio", [], True)) # Defaulting wait to True
+            
+        # For Scripts
+            elif atype == "Script":
+                # ... (your existing file picker logic) ...
+                if f:
+                    self.actions.append(Action("Script", f, True)) # Defaulting wait
+
+    def load_and_run_from_cli(self, filename):
+        """Loads a specific routine file and starts it immediately."""
+        # Construct the full path
+        path = os.path.join(self.routines_dir, filename)
+        if not path.endswith(".json"):
+            path += ".json"
+
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                data = json.load(f)
+            self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
+            self.update_display()
+            self.safe_status_update(f"CLI Load: {filename}")
+            
+            # Start the routine automatically
+            self.run_thread()
+        else:
+            print(f"Error: Routine '{filename}' not found in {self.routines_dir}")
         
     def setup_menu(self):
-        self.menu_bar = tk.Menu(self)
+        """Initializes the top menu bar with File and Tools options."""
+        # Create the main menu bar object
+        # Note: We use the standard tkinter Menu (tk.Menu) for the top bar
+        menubar = tk.Menu(self)
+        self.config(menu=menubar)
+
+        # --- FILE MENU ---
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
         
-        # --- File Menu (Unchanged) ---
-        file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        file_menu.add_command(label="New Routine", command=self.new_routine)
-        file_menu.add_command(label="Load Routine", command=self.load_routine)
+        # Standard routine management options
+        file_menu.add_command(label="New Routine", command=self.clear_routine)
         file_menu.add_command(label="Save Routine", command=self.save_routine)
+        file_menu.add_command(label="Load Routine", command=self.load_routine)
+        
+        file_menu.add_separator()
+        
+        # The new CLI utility
+        file_menu.add_command(
+            label="Copy CLI Command to Clipboard", 
+            command=self.copy_cli_command
+        )
+        
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.on_closing)
-        self.menu_bar.add_cascade(label="File", menu=file_menu)
 
-        # --- Edit Menu (Updated Labels) ---
-        edit_menu = tk.Menu(self.menu_bar, tearoff=0)
-        # Updated to match your new button labels
-        edit_menu.add_command(label="Add Play Single File", command=lambda: self.add_action("Audio"))
-        edit_menu.add_command(label="Add Wait", command=lambda: self.add_action("Wait"))
-        edit_menu.add_command(label="Add Script", command=lambda: self.add_action("Script"))
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Remove Selected", command=self.remove_action)
-        self.menu_bar.add_cascade(label="Edit", menu=edit_menu)
+        # --- TOOLS MENU (Optional - for future growth) ---
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        
+        # Example tool: Opening the settings folder
+        tools_menu.add_command(
+            label="Open Routines Folder", 
+            command=lambda: os.startfile(self.routines_dir)
+        )
+        
+        # Example tool: Resetting the last used directory trackers
+        tools_menu.add_command(
+            label="Reset Saved Paths", 
+            command=self.reset_settings
+        )
 
-        # --- Help Menu ---
-        help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        help_menu.add_command(label="About", command=self.show_about)
-        self.menu_bar.add_cascade(label="Help", menu=help_menu)
+    def clear_routine(self):
+        """Wipes the current actions list to start fresh."""
+        if messagebox.askyesno("Confirm", "Clear all actions and start a new routine?"):
+            self.actions = []
+            self.update_display()
+            self.safe_status_update("New routine started.")
 
-        self.configure(menu=self.menu_bar)
+    def reset_settings(self):
+        """Resets the directory trackers to the base directory."""
+        self.last_audio_dir = self.base_dir
+        self.last_script_dir = self.base_dir
+        self.save_settings()
+        messagebox.showinfo("Reset", "Directory trackers have been reset to the program folder.")
         
     def new_routine(self):
         if tk.messagebox.askyesno("New Routine", "Clear current actions?"):
@@ -216,47 +284,114 @@ class RoutineApp(ctk.CTk):
         self.is_running = False
         pygame.mixer.quit(); self.destroy(); sys.exit()
 
+
     def save_routine(self):
-        path = filedialog.asksaveasfilename(
-            initialdir=self.routines_dir, # Set the default starting folder
+        """Saves the current list of actions to a JSON file and updates Recents."""
+        # Open the save dialog, defaulting to your Routines folder
+        filename = filedialog.asksaveasfilename(
+            initialdir=self.routines_dir,
+            title="Save Routine",
             defaultextension=".json",
-            filetypes=[("JSON files", "*.json")]
+            filetypes=[("JSON Files", "*.json")]
         )
-        if path:
-            data = [{"type": a.type, "data": a.data, "wait": a.wait_on_completion} for a in self.actions]
-            with open(path, 'w') as f:
-                json.dump(data, f, indent=4)    
+        
+        if filename:
+            try:
+                # We change "wait" to "wait_on_completion" here
+                data = [
+                    {
+                        "type": a.type, 
+                        "data": a.data, 
+                        "wait": a.wait_on_completion # <--- Matches your class
+                    } 
+                    for a in self.actions
+                ]
+                
+                # Write to the file
+                with open(filename, 'w') as f:
+                    json.dump(data, f, indent=4)
+                
+                # Update our directory tracker and Recents list
+                self.last_used_dir = os.path.dirname(filename)
+                self.update_recent_files(filename)
+                
+                self.safe_status_update(f"Saved: {os.path.basename(filename)}")
+                messagebox.showinfo("Success", "Routine saved successfully.")
+            except Exception as e:
+                messagebox.showerror("Save Error", f"An error occurred while saving: {e}")
 
     def load_routine(self):
-        path = filedialog.askopenfilename(
-            initialdir=self.routines_dir, # Set the default starting folder
-            filetypes=[("JSON files", "*.json")]
+        """Opens a file dialog to load a routine and updates the Recents list."""
+        # Open the load dialog
+        filename = filedialog.askopenfilename(
+            initialdir=self.routines_dir,
+            title="Load Routine",
+            filetypes=[("JSON Files", "*.json")]
         )
-        if path:
-            with open(path, 'r') as f:
-                data = json.load(f)
-            self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
-            self.update_display()
-
+        
+        if filename:
+            try:
+                with open(filename, 'r') as f:
+                    data = json.load(f)
+                
+                # We map the JSON "wait" key back to "wait_on_completion"
+                self.actions = [
+                    Action(i['type'], i['data'], i.get('wait', True)) 
+                    for i in data
+                ]
+                
+                # Update the GUI display and directory tracker
+                self.update_display()
+                self.last_used_dir = os.path.dirname(filename)
+                
+                # Add this file to the 'Open Recent' menu
+                self.update_recent_files(filename)
+                
+                self.safe_status_update(f"Loaded: {os.path.basename(filename)}")
+            except Exception as e:
+                messagebox.showerror("Load Error", f"An error occurred while loading: {e}")
+                
             
     def add_action(self, atype):
+        """Creates a new Action object and adds it to the routine."""
+        # 1. AUDIO ACTION
         if atype == "Audio":
-            new_action = Action("Audio", [])
+            # Initialize with an empty list for audio data and 'wait' set to True
+            new_action = Action("Audio", [], True)
             self.actions.append(new_action)
-            self.selected_index.set(len(self.actions)-1)
             self.update_display()
-            editors.AudioSequenceEditor(self, new_action)
+            
+            # Automatically open the editor for the newly created audio action
+            self.selected_index.set(len(self.actions) - 1)
+            self.edit_action()
+
+        # 2. WAIT ACTION
         elif atype == "Wait":
-            v = simpledialog.askinteger("Wait", "Seconds:")
-            if v: self.actions.append(Action("Wait", v)); self.update_display()
-        # --- Update add_action for Scripts ---
+            # Default to a 5-second wait if not specified
+            new_action = Action("Wait", 5, True)
+            self.actions.append(new_action)
+            self.update_display()
+
+        # 3. SCRIPT ACTION
         elif atype == "Script":
-            f = filedialog.askopenfilename(initialdir=self.last_script_dir, filetypes=[("Python", "*.py")])
+            # Open file dialog using the last used script directory
+            f = filedialog.askopenfilename(
+                initialdir=self.last_script_dir,
+                title="Select Python Script",
+                filetypes=[("Python Files", "*.py")]
+            )
+            
             if f:
+                # Update the directory tracker for scripts
                 self.last_script_dir = os.path.dirname(f)
-                self.save_settings() # <--- ADD THIS
-                self.actions.append(Action("Script", f))
+                self.save_settings()
+                
+                # Add the script action with 'wait' set to True
+                new_action = Action("Script", f, True)
+                self.actions.append(new_action)
                 self.update_display()
+
+        self.safe_status_update(f"Added {atype} action.")
     
 
     def update_display(self):
@@ -343,26 +478,48 @@ class RoutineApp(ctk.CTk):
         self.is_running = True
         
         for a in self.actions:
-            if not self.is_running: break
+            if not self.is_running: 
+                break
             
             if a.type == "Audio":
                 for item in a.data:
+                    if not self.is_running: 
+                        break
+                        
                     repeat_count = item.get('repeat', 1)
                     for i in range(repeat_count):
-                        if not self.is_running: break
+                        if not self.is_running: 
+                            break
                         
                         full_path, display_name = audio_engine.get_next_filename(item)
                         msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
                         self.after(0, lambda m=msg: self.safe_status_update(m))
                         
                         if full_path:
+                            # 1. Start the audio
                             audio_engine.play_audio(full_path)
-            
-            # ... (Wait and Script logic) ...
+                            
+                            # 2. Check if we need to wait before moving to the next file/action
+                            if a.wait_on_completion:
+                                # This loop polls the audio engine to see if it's still busy
+                                while audio_engine.is_playing() and self.is_running:
+                                    time.sleep(0.1) # Small sleep to prevent CPU spiking
 
-        # When the loop finishes, reset the buttons
+            elif a.type == "Wait":
+                # Ensure your Wait logic also checks self.is_running
+                duration = int(a.data)
+                for _ in range(duration):
+                    if not self.is_running: break
+                    time.sleep(1)
+
+            elif a.type == "Script":
+                # Your existing script execution logic here
+                pass
+
+        # Cleanup after routine ends or is stopped
         self.is_running = False
         self.after(0, self.reset_ui_after_run)
+        
 
     def reset_ui_after_run(self):
         """Restores the button states when the routine ends."""
@@ -373,10 +530,11 @@ class RoutineApp(ctk.CTk):
 
 
     def load_settings(self):
-        """Load last used directories from a JSON file."""
+        """Load settings including recent files."""
         defaults = {
             "last_audio_dir": self.base_dir,
-            "last_script_dir": self.base_dir
+            "last_script_dir": self.base_dir,
+            "recent_files": []
         }
         if os.path.exists(self.settings_file):
             try:
@@ -384,19 +542,106 @@ class RoutineApp(ctk.CTk):
                     settings = json.load(f)
                     self.last_audio_dir = settings.get("last_audio_dir", self.base_dir)
                     self.last_script_dir = settings.get("last_script_dir", self.base_dir)
+                    self.recent_files = settings.get("recent_files", [])[:5] # Keep last 5
             except Exception:
                 self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
+                self.recent_files = []
         else:
             self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
+            self.recent_files = []
+
 
     def save_settings(self):
-        """Save the current directory trackers to the JSON file."""
+        """Save settings including recent files."""
         settings = {
             "last_audio_dir": self.last_audio_dir,
-            "last_script_dir": self.last_script_dir
+            "last_script_dir": self.last_script_dir,
+            "recent_files": self.recent_files
         }
         with open(self.settings_file, 'w') as f:
-            json.dump(settings, f, indent=4)        
+            json.dump(settings, f, indent=4)
+    def copy_cli_command(self):
+        """Generates a CLI command for the current script and routine, then copies to clipboard."""
+        # Get the current script path
+        script_path = os.path.abspath(__file__)
+        
+        # Ask the user which routine they want to create a command for
+        f = filedialog.askopenfilename(
+            initialdir=self.routines_dir,
+            title="Select Routine for CLI Command",
+            filetypes=[("JSON Files", "*.json")]
+        )
+        
+        if f:
+            # Extract just the filename without the .json extension
+            routine_name = os.path.splitext(os.path.basename(f))[0]
+            
+            # Format the command (using quotes in case there are spaces in paths)
+            cli_cmd = f'python "{script_path}" "{routine_name}"'
+            
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(cli_cmd)
+            self.update() # Required for some systems to register the clipboard change
+            
+            # Show a message to the user
+            messagebox.showinfo("CLI Command Copied", f"The following command is now on your clipboard:\n\n{cli_cmd}")
+            self.safe_status_update("CLI command copied to clipboard.")
+
+    def update_recent_files(self, file_path):
+        """
+        Manages the recent files list, ensures no duplicates, 
+        limits to 5 items, and refreshes the menu.
+        """
+        # Ensure the path is absolute and clean
+        file_path = os.path.abspath(file_path)
+        
+        # 1. Remove if already in list (to move it to the top)
+        if file_path in self.recent_files:
+            self.recent_files.remove(file_path)
+        
+        # 2. Add to the front of the list
+        self.recent_files.insert(0, file_path)
+        
+        # 3. Trim to keep only the 5 most recent
+        self.recent_files = self.recent_files[:5]
+        
+        # 4. Save this new list to your settings.json on your hard drive
+        self.save_settings()
+        
+        # 5. IMPORTANT: Re-run setup_menu so the 'Open Recent' list 
+        # visually updates while the app is open
+        self.setup_menu()
+
+    def load_specific_routine(self, path):
+        """
+        Triggered when you click a filename in the 'Open Recent' menu.
+        """
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                
+                # Reconstruct the actions from the JSON data
+                self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
+                
+                # Refresh the GUI list
+                self.update_display()
+                
+                # Move this file to the top of the recents list
+                self.update_recent_files(path)
+                
+                self.safe_status_update(f"Loaded: {os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("Load Error", f"Could not load routine: {e}")
+        else:
+            messagebox.showwarning("File Not Found", "This routine file no longer exists.")
+            # Optionally remove the dead path from recents
+            if path in self.recent_files:
+                self.recent_files.remove(path)
+                self.save_settings()
+                self.setup_menu()
+
 
 if __name__ == "__main__":
     RoutineApp().mainloop()

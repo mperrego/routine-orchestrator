@@ -86,3 +86,6 @@ def run_external_script(script_path):
 
 def wait_action(seconds):
     time.sleep(seconds)
+
+def is_playing():
+    return pygame.mixer.music.get_busy()
