@@ -1,0 +1,12 @@
+# Python junk
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Project-specific temporary files
+temp_converted.mp3
+.last_played.txt
+
+# OS-specific
+Thumbs.db
+Desktop.ini
