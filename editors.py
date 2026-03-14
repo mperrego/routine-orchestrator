@@ -74,33 +74,30 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.sync_data()
         self.attributes("-topmost", False) 
         f = filedialog.askopenfilename(
-            initialdir=self.editor_last_dir, # Start at last used
+            initialdir=self.parent_app.last_audio_dir, # Use Audio-specific tracker
             title="Select Audio File"
         )
         if f:
-            self.editor_last_dir = os.path.dirname(f) # Update tracker
-            self.parent_app.last_used_dir = self.editor_last_dir # Update main app too
+            new_dir = os.path.dirname(f)
+            self.parent_app.last_audio_dir = new_dir # Save it back to the main app
             self.action.data.append({"path": f, "mode": "Single", "repeat": 1})
             self.update_list()
         self.attributes("-topmost", True)
 
-
-
     def add_folder(self):
         self.sync_data()
         self.attributes("-topmost", False) 
+        # We use askopenfilename here as a trick to pick a folder by picking a file inside it
         f = filedialog.askopenfilename(
-            initialdir=self.editor_last_dir,
+            initialdir=self.parent_app.last_audio_dir, # Use Audio-specific tracker
             title="Pick any file inside the target folder"
         )
         if f:
             folder = os.path.dirname(f)
-            self.editor_last_dir = folder
-            self.parent_app.last_used_dir = folder
+            self.parent_app.last_audio_dir = folder # Save it back to the main app
             self.action.data.append({"path": folder, "mode": "Random", "repeat": 1})
             self.update_list()
         self.attributes("-topmost", True)
-
 
 
     def update_list(self):

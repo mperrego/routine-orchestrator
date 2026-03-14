@@ -36,6 +36,8 @@ class RoutineApp(ctk.CTk):
         # Define the dedicated Routines directory
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.routines_dir = os.path.join(self.base_dir, "Routines")
+        self.last_audio_dir = self.base_dir  # Specific tracker for Music/Audio
+        self.last_script_dir = self.base_dir # Specific tracker for Python Scripts
         # Automatically create the folder if it doesn't exist
         if not os.path.exists(self.routines_dir):
             os.makedirs(self.routines_dir)
