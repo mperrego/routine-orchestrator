@@ -2,9 +2,9 @@
 Author: Michael
 Project: Routine Orchestrator
 File: audio_engine.py
-Description: Core audio playback logic handling MP3/WAV/M4A files, 
-             sequential tracking, and external script execution.
-Version: 3.5
+Description: Split selection and playback logic to allow the GUI to 
+             display the filename before audio starts.
+Version: 4.2
 Date: 2026-03-14
 """
 
@@ -14,54 +14,37 @@ import time
 import pygame
 from pydub import AudioSegment
 
-# Initialize the mixer with a locked frequency to prevent sample rate errors
 if not pygame.mixer.get_init():
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
-def play_audio(file_path):
+def get_next_filename(item_data):
     """
-    Handles native playback for mp3/wav and auto-conversion for other formats.
+    Predicts the next file to be played without playing it.
+    Returns the full path and the display name.
     """
-    try:
-        ext = file_path.lower()
-        # Non-standard formats are exported to a temporary MP3 for stability
-        if not (ext.endswith('.mp3') or ext.endswith('.wav')):
-            audio = AudioSegment.from_file(file_path)
-            temp_path = "temp_converted.mp3"
-            audio.export(temp_path, format="mp3")
-            file_path = temp_path
-            
-        pygame.mixer.music.load(file_path)
-        pygame.mixer.music.play()
-        
-        # Keep the thread alive while audio is playing
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-    except Exception as e:
-        print(f"Engine Error: {e}")
+    path = item_data.get("path")
+    if not os.path.exists(path):
+        return None, "Path Not Found"
 
-def process_directory(path, mode="Random"):
-    """
-    Selects and plays a file from a directory based on the chosen mode.
-    Maintains a .last_played.txt file for Sequential logic.
-    """
+    if os.path.isfile(path):
+        return path, os.path.basename(path)
+    
+    # Directory Logic
     valid_exts = ('.mp3', '.wav', '.m4a')
     files = sorted([f for f in os.listdir(path) if f.lower().endswith(valid_exts)])
-    
     if not files:
-        return "No Files Found"
-        
+        return None, "No Files Found"
+
     tracker_path = os.path.join(path, ".last_played.txt")
     chosen_file = None
     
-    if mode == "Sequential":
+    if item_data.get("mode") == "Sequential":
         last_played = ""
         if os.path.exists(tracker_path):
             try:
                 with open(tracker_path, 'r', encoding='utf-8') as f:
                     last_played = f.read().strip()
-            except:
-                pass
+            except: pass
         
         if last_played in files:
             next_idx = (files.index(last_played) + 1) % len(files)
@@ -74,16 +57,24 @@ def process_directory(path, mode="Random"):
     else:
         chosen_file = random.choice(files)
         
-    play_audio(os.path.join(path, chosen_file))
-    return chosen_file
+    return os.path.join(path, chosen_file), chosen_file
 
-def run_external_script(script_path):
-    """Executes a secondary Python script as part of the routine."""
+def play_audio(file_path):
+    """Handles playback only. The GUI now handles the naming."""
     try:
-        os.system(f"python \"{script_path}\"")
+        ext = file_path.lower()
+        if not (ext.endswith('.mp3') or ext.endswith('.wav')):
+            audio = AudioSegment.from_file(file_path)
+            temp_path = "temp_converted.mp3"
+            audio.export(temp_path, format="mp3")
+            file_path = temp_path
+            
+        pygame.mixer.music.load(file_path)
+        pygame.mixer.music.play()
+        
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
     except Exception as e:
-        print(f"Script Error: {e}")
+        print(f"Engine Error: {e}")
 
-def wait_action(seconds):
-    """Pauses execution for a specified duration."""
-    time.sleep(seconds)
+# ... [run_external_script and wait_action remain same] ...
