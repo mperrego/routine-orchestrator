@@ -9,6 +9,7 @@ last_played.txt
 temp_converted.mp3
 __pycache__/
 *.pyc
+/Routines/
 
 # OS-specific
 Thumbs.db

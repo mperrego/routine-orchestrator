@@ -43,7 +43,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         list_menu = tk.Menu(menu_bar, tearoff=0)
         # Updated to match your new button labels
         list_menu.add_command(label="Add Play Single File", command=self.add_file)
-        list_menu.add_command(label="Add Playing Multiple Files", command=self.add_folder)
+        list_menu.add_command(label="Add Play Multiple Files", command=self.add_folder)
         list_menu.add_separator()
         list_menu.add_command(label="Clear All", command=self.clear_all_items)
         menu_bar.add_cascade(label="Actions", menu=list_menu)

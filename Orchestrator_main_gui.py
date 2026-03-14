@@ -33,6 +33,13 @@ class RoutineApp(ctk.CTk):
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
         self.setup_menu()
+        # Define the dedicated Routines directory
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.routines_dir = os.path.join(self.base_dir, "Routines")
+        # Automatically create the folder if it doesn't exist
+        if not os.path.exists(self.routines_dir):
+            os.makedirs(self.routines_dir)
+        # --------------------------------
 
 
         # --- Top Menu ---
@@ -198,17 +205,28 @@ class RoutineApp(ctk.CTk):
         pygame.mixer.quit(); self.destroy(); sys.exit()
 
     def save_routine(self):
-        path = filedialog.asksaveasfilename(defaultextension=".json")
+        path = filedialog.asksaveasfilename(
+            initialdir=self.routines_dir, # Set the default starting folder
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")]
+        )
         if path:
             data = [{"type": a.type, "data": a.data, "wait": a.wait_on_completion} for a in self.actions]
-            with open(path, 'w') as f: json.dump(data, f, indent=4)
+            with open(path, 'w') as f:
+                json.dump(data, f, indent=4)    
 
     def load_routine(self):
-        path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
+        path = filedialog.askopenfilename(
+            initialdir=self.routines_dir, # Set the default starting folder
+            filetypes=[("JSON files", "*.json")]
+        )
         if path:
-            with open(path, 'r') as f: data = json.load(f)
+            with open(path, 'r') as f:
+                data = json.load(f)
             self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
             self.update_display()
+
+            
 
     def add_action(self, atype):
         if atype == "Audio":
