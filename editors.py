@@ -10,6 +10,7 @@ Date: 2026-03-14
 import customtkinter as ctk
 from tkinter import filedialog
 import os
+import tkinter as tk
 
 class AudioSequenceEditor(ctk.CTkToplevel):
     def __init__(self, parent, action):
@@ -19,7 +20,8 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.action = action
         self.parent_app = parent
         self.attributes("-topmost", True)
-        self.repeat_entries = [] 
+        self.repeat_entries = []
+        self.setup_editor_menu()
 
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -32,6 +34,27 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         ctk.CTkButton(ctrl, text="Save & Close", fg_color="green", command=self.close_and_refresh).pack(side="right", padx=5)
         
         self.update_list()
+
+
+    def setup_editor_menu(self):
+        menu_bar = tk.Menu(self)
+        
+        # --- List Actions (Updated Labels) ---
+        list_menu = tk.Menu(menu_bar, tearoff=0)
+        # Updated to match your new button labels
+        list_menu.add_command(label="Add Play Single File", command=self.add_file)
+        list_menu.add_command(label="Add Playing Multiple Files", command=self.add_folder)
+        list_menu.add_separator()
+        list_menu.add_command(label="Clear All", command=self.clear_all_items)
+        menu_bar.add_cascade(label="Actions", menu=list_menu)
+
+        self.configure(menu=menu_bar)
+
+    def clear_all_items(self):
+        if tk.messagebox.askyesno("Clear List", "Remove all audio items from this sequence?"):
+            self.action.data = []
+            self.update_list()
+
 
     def sync_data(self):
         for idx, entry in self.repeat_entries:

@@ -16,6 +16,7 @@ import os
 import sys
 import pygame
 import json
+import tkinter as tk
 
 class Action:
     def __init__(self, action_type, data, wait_on_completion=True):
@@ -31,6 +32,8 @@ class RoutineApp(ctk.CTk):
         self.actions = []
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
+        self.setup_menu()
+
 
         # --- Top Menu ---
         f_io = ctk.CTkFrame(self)
@@ -94,6 +97,43 @@ class RoutineApp(ctk.CTk):
         self.status.pack(side="bottom", fill="x", padx=20, pady=5)
         
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def setup_menu(self):
+        self.menu_bar = tk.Menu(self)
+        
+        # --- File Menu (Unchanged) ---
+        file_menu = tk.Menu(self.menu_bar, tearoff=0)
+        file_menu.add_command(label="New Routine", command=self.new_routine)
+        file_menu.add_command(label="Load Routine", command=self.load_routine)
+        file_menu.add_command(label="Save Routine", command=self.save_routine)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.on_closing)
+        self.menu_bar.add_cascade(label="File", menu=file_menu)
+
+        # --- Edit Menu (Updated Labels) ---
+        edit_menu = tk.Menu(self.menu_bar, tearoff=0)
+        # Updated to match your new button labels
+        edit_menu.add_command(label="Add Play Single File", command=lambda: self.add_action("Audio"))
+        edit_menu.add_command(label="Add Wait", command=lambda: self.add_action("Wait"))
+        edit_menu.add_command(label="Add Script", command=lambda: self.add_action("Script"))
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Remove Selected", command=self.remove_action)
+        self.menu_bar.add_cascade(label="Edit", menu=edit_menu)
+
+        # --- Help Menu ---
+        help_menu = tk.Menu(self.menu_bar, tearoff=0)
+        help_menu.add_command(label="About", command=self.show_about)
+        self.menu_bar.add_cascade(label="Help", menu=help_menu)
+
+        self.configure(menu=self.menu_bar)
+        
+    def new_routine(self):
+        if tk.messagebox.askyesno("New Routine", "Clear current actions?"):
+            self.actions = []
+            self.update_display()
+
+    def show_about(self):
+        tk.messagebox.showinfo("About", "Routine Orchestrator v7.1\nPersonal Automation Suite")
 
     def skip_item(self):
         """Interrupts current audio. The loop will then move to the next item."""

@@ -4,8 +4,11 @@ __pycache__/
 *$py.class
 
 # Project-specific temporary files
-temp_converted.mp3
 .last_played.txt
+last_played.txt
+temp_converted.mp3
+__pycache__/
+*.pyc
 
 # OS-specific
 Thumbs.db
