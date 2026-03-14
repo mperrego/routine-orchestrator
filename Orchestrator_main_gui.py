@@ -27,45 +27,57 @@ class Action:
 class RoutineApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # 1. WINDOW SETUP
         self.title("Routine Orchestrator")
         self.geometry("1100x950")
+        
+        # 2. PATHS & PERSISTENCE (Must be defined before UI and load_settings)
+        # Get the directory where Orchestrator_main_gui.py is located
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Define specific sub-directories and settings file
+        self.routines_dir = os.path.join(self.base_dir, "Routines")
+        self.settings_file = os.path.join(self.base_dir, "settings.json")
+        
+        # Ensure the Routines folder exists immediately
+        if not os.path.exists(self.routines_dir):
+            os.makedirs(self.routines_dir)
+
+        # 3. INITIALIZE TRACKERS (Load from file if possible, otherwise use base_dir)
+        self.load_settings() 
+
+        # 4. APP STATE
         self.actions = []
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
+        
+        # Initialize the menu bar
         self.setup_menu()
-        # Define the dedicated Routines directory
-        self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.routines_dir = os.path.join(self.base_dir, "Routines")
-        self.last_audio_dir = self.base_dir  # Specific tracker for Music/Audio
-        self.last_script_dir = self.base_dir # Specific tracker for Python Scripts
-        # Automatically create the folder if it doesn't exist
-        if not os.path.exists(self.routines_dir):
-            os.makedirs(self.routines_dir)
-        # --------------------------------
-        self.last_used_dir = self.routines_dir # Default to Routines folder
 
-
-        # --- Top Menu ---
+        # 5. UI COMPONENTS - TOP MENU (Save/Load)
         f_io = ctk.CTkFrame(self)
         f_io.pack(fill="x", padx=20, pady=(10, 0))
         ctk.CTkButton(f_io, text="Save Routine", command=self.save_routine).pack(side="left", padx=10, pady=5)
         ctk.CTkButton(f_io, text="Load Routine", command=self.load_routine).pack(side="left", padx=10, pady=5)
 
+        # 6. UI COMPONENTS - MAIN LIST AREA
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # --- Actions Group ---
+        # 7. UI COMPONENTS - ACTIONS GROUP (Creation)
         f_actions_container = ctk.CTkFrame(self)
         f_actions_container.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(f_actions_container, text="Actions", font=("Arial", 12, "bold"), text_color="gray").pack(anchor="w", padx=10)
         
         f_create = ctk.CTkFrame(f_actions_container, fg_color="transparent")
         f_create.pack(fill="x", padx=5, pady=(0, 5))
+        # Button labels updated to be concise; the "add_action" logic handles the rest
         ctk.CTkButton(f_create, text="+ Add Audio", width=140, command=lambda: self.add_action("Audio")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Wait", width=100, command=lambda: self.add_action("Wait")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Script", width=100, command=lambda: self.add_action("Script")).pack(side="left", padx=5)
 
-        # --- Edit Actions Group ---
+        # 8. UI COMPONENTS - EDIT ACTIONS GROUP (Management)
         f_edit_container = ctk.CTkFrame(self)
         f_edit_container.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(f_edit_container, text="Edit Actions", font=("Arial", 12, "bold"), text_color="gray").pack(anchor="w", padx=10)
@@ -77,37 +89,34 @@ class RoutineApp(ctk.CTk):
         ctk.CTkButton(f_mgmt, text="Move Down", width=80, command=lambda: self.move_action(1)).pack(side="left", padx=5)
         ctk.CTkButton(f_mgmt, text="Delete Selection", fg_color="darkred", command=self.remove_action).pack(side="right", padx=5)
 
-        # --- Playback Bar ---
+        # 9. UI COMPONENTS - PLAYBACK BAR
         f_run = ctk.CTkFrame(self)
         f_run.pack(fill="x", padx=20, pady=10)
         
-        # 1. Create the Play Button
         self.play_btn = ctk.CTkButton(f_run, text="RUN ROUTINE", fg_color="green", 
                                      font=("Arial", 14, "bold"), command=self.run_thread)
         self.play_btn.pack(side="left", fill="x", expand=True, padx=5)
         
-        # 2. Create the Skip Button (Must be defined BEFORE packing)
         self.skip_btn = ctk.CTkButton(f_run, text="SKIP", fg_color="#cc8400", 
                                      state="disabled", width=80, command=self.skip_item)
         self.skip_btn.pack(side="left", padx=5)
 
-        # 3. Create the Stop Button
         self.stop_btn = ctk.CTkButton(f_run, text="STOP", fg_color="darkred", 
                                      state="disabled", width=80, command=self.stop_routine)
         self.stop_btn.pack(side="left", padx=5)
 
-        # 4. Create the Exit Button
         self.exit_btn = ctk.CTkButton(f_run, text="EXIT", fg_color="#333333", 
                                      width=80, command=self.on_closing)
         self.exit_btn.pack(side="right", padx=5)
 
-        # --- Status Bar ---
+        # 10. UI COMPONENTS - STATUS BAR
         self.status = ctk.CTkLabel(self, text="Ready", anchor="w", text_color="#00d4ff", 
                                    font=("Arial", 12, "bold"))
         self.status.pack(side="bottom", fill="x", padx=20, pady=5)
         
+        # Window Close Protocol
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
+        
     def setup_menu(self):
         self.menu_bar = tk.Menu(self)
         
@@ -240,13 +249,12 @@ class RoutineApp(ctk.CTk):
         elif atype == "Wait":
             v = simpledialog.askinteger("Wait", "Seconds:")
             if v: self.actions.append(Action("Wait", v)); self.update_display()
+        # --- Update add_action for Scripts ---
         elif atype == "Script":
-            f = filedialog.askopenfilename(
-                initialdir=self.last_used_dir, # Use the tracker
-                filetypes=[("Python", "*.py")]
-            )
+            f = filedialog.askopenfilename(initialdir=self.last_script_dir, filetypes=[("Python", "*.py")])
             if f:
-                self.last_used_dir = os.path.dirname(f) # Update tracker
+                self.last_script_dir = os.path.dirname(f)
+                self.save_settings() # <--- ADD THIS
                 self.actions.append(Action("Script", f))
                 self.update_display()
     
@@ -362,6 +370,33 @@ class RoutineApp(ctk.CTk):
         self.stop_btn.configure(state="disabled")
         self.skip_btn.configure(state="disabled")
         self.safe_status_update("Ready")
+
+
+    def load_settings(self):
+        """Load last used directories from a JSON file."""
+        defaults = {
+            "last_audio_dir": self.base_dir,
+            "last_script_dir": self.base_dir
+        }
+        if os.path.exists(self.settings_file):
+            try:
+                with open(self.settings_file, 'r') as f:
+                    settings = json.load(f)
+                    self.last_audio_dir = settings.get("last_audio_dir", self.base_dir)
+                    self.last_script_dir = settings.get("last_script_dir", self.base_dir)
+            except Exception:
+                self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
+        else:
+            self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
+
+    def save_settings(self):
+        """Save the current directory trackers to the JSON file."""
+        settings = {
+            "last_audio_dir": self.last_audio_dir,
+            "last_script_dir": self.last_script_dir
+        }
+        with open(self.settings_file, 'w') as f:
+            json.dump(settings, f, indent=4)        
 
 if __name__ == "__main__":
     RoutineApp().mainloop()

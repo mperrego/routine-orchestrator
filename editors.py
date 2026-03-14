@@ -15,29 +15,50 @@ import tkinter as tk
 class AudioSequenceEditor(ctk.CTkToplevel):
     def __init__(self, parent, action):
         super().__init__(parent)
+        
+        # 1. Window Configuration
         self.title("Audio Configuration")
         self.geometry("1000x800")
         self.action = action
         self.parent_app = parent
         self.attributes("-topmost", True)
         self.repeat_entries = []
+        
+        # 2. Directory Tracking
+        self.editor_last_dir = parent.last_audio_dir
+        
+        # 3. Menu and Close Protocol
         self.setup_editor_menu()
-        # Default to the parent app's last used directory
-        self.editor_last_dir = parent.last_used_dir
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        # 4. UI - MAIN SCROLLABLE LIST
+        # This frame holds all the audio files you add
         self.list_frame = ctk.CTkScrollableFrame(self)
         self.list_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
+        # 5. UI - CONTROL PANEL (Buttons)
+        # Creating a dedicated frame at the bottom for the buttons
         ctrl = ctk.CTkFrame(self)
         ctrl.pack(fill="x", padx=20, pady=10)
         
-        ctk.CTkButton(ctrl, text="+ Add Playing Single File", command=self.add_file).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="+ Add Playing Multiple Files", command=self.add_folder).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="Save & Close", fg_color="green", command=self.on_closing).pack(side="right", padx=5)
+        # Add Single File Button
+        ctk.CTkButton(ctrl, 
+                      text="+ Add Play Single File", 
+                      command=self.add_file).pack(side="left", padx=5)
         
+        # Add Multiple Files Button
+        ctk.CTkButton(ctrl, 
+                      text="+ Add Playing Multiple Files", 
+                      command=self.add_folder).pack(side="left", padx=5)
+        
+        # Save & Close Button (Linked to our cleanup logic)
+        ctk.CTkButton(ctrl, 
+                      text="Save & Close", 
+                      fg_color="green", 
+                      command=self.on_closing).pack(side="right", padx=5)
+        
+        # 6. INITIAL POPULATE
         self.update_list()
-
 
     def setup_editor_menu(self):
         menu_bar = tk.Menu(self)
@@ -70,35 +91,48 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.parent_app.update_display()
         self.destroy()
 
+
     def add_file(self):
+        """Opens a file dialog to add a single audio file and updates the tracker."""
         self.sync_data()
         self.attributes("-topmost", False) 
+        
         f = filedialog.askopenfilename(
-            initialdir=self.parent_app.last_audio_dir, # Use Audio-specific tracker
-            title="Select Audio File"
+            initialdir=self.parent_app.last_audio_dir,
+            title="Select Audio File",
+            filetypes=[("Audio Files", "*.mp3 *.wav *.ogg *.m4a"), ("All Files", "*.*")]
         )
+        
         if f:
             new_dir = os.path.dirname(f)
-            self.parent_app.last_audio_dir = new_dir # Save it back to the main app
+            self.parent_app.last_audio_dir = new_dir
+            self.parent_app.save_settings()
+            
             self.action.data.append({"path": f, "mode": "Single", "repeat": 1})
             self.update_list()
+            
         self.attributes("-topmost", True)
 
     def add_folder(self):
+        """Uses a file picker to select a folder (via a file inside it) and updates the tracker."""
         self.sync_data()
         self.attributes("-topmost", False) 
-        # We use askopenfilename here as a trick to pick a folder by picking a file inside it
+        
         f = filedialog.askopenfilename(
-            initialdir=self.parent_app.last_audio_dir, # Use Audio-specific tracker
+            initialdir=self.parent_app.last_audio_dir,
             title="Pick any file inside the target folder"
         )
+        
         if f:
             folder = os.path.dirname(f)
-            self.parent_app.last_audio_dir = folder # Save it back to the main app
+            self.parent_app.last_audio_dir = folder
+            self.parent_app.save_settings()
+            
             self.action.data.append({"path": folder, "mode": "Random", "repeat": 1})
             self.update_list()
+            
         self.attributes("-topmost", True)
-
+ 
 
     def update_list(self):
         """Rebuilds the list and restores the file-preview text box for folders."""
