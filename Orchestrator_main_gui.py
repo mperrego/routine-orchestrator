@@ -131,16 +131,6 @@ class RoutineApp(ctk.CTk):
             self.after(100, lambda: self.load_and_run_from_cli(sys.argv[1]))
 
 
-        # For Audio
-            if atype == "Audio":
-                # ... (your existing dialog logic) ...
-                self.actions.append(Action("Audio", [], True)) # Defaulting wait to True
-            
-        # For Scripts
-            elif atype == "Script":
-                # ... (your existing file picker logic) ...
-                if f:
-                    self.actions.append(Action("Script", f, True)) # Defaulting wait
 
     def load_and_run_from_cli(self, filename):
         """Loads a specific routine file and starts it immediately."""
