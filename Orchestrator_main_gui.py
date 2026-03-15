@@ -287,7 +287,18 @@ class RoutineApp(ctk.CTk):
             elif a.type == "Script":
                 script_name = os.path.basename(a.data)
                 self.safe_status_update(f"Running Script: {script_name}")
-                self.update()  # <--- Force refresh
+                
+                # Call our updated engine and get the result
+                success = audio_engine.run_external_script(a.data)
+                
+                if success:
+                    self.safe_status_update(f"SUCCESS: {script_name} finished")
+                else:
+                    # We use a slightly different message for errors
+                    self.safe_status_update(f"ERROR: {script_name} failed")
+                
+                # Give the user 2 seconds to see the status before moving on
+                time.sleep(2)
     
                 audio_engine.run_external_script(a.data)
         
@@ -507,22 +518,22 @@ class RoutineApp(ctk.CTk):
                 self.safe_status_update(f"Wait updated to {v}s.")
 
         # 5. SCRIPT: Change the target Python file
+
         elif a.type == "Script":
-            # Default to the directory of the current script in the action
-            current_dir = os.path.dirname(a.data) if a.data else self.last_script_dir
-            
-            f = filedialog.askopenfilename(
-                initialdir=current_dir,
-                title="Select New Script",
-                filetypes=[("Python Files", "*.py")]
-            )
-            
-            if f:
-                self.last_script_dir = os.path.dirname(f)
-                a.data = f
-                self.save_settings() # Save the new preferred script directory
-                self.update_display()
-                self.safe_status_update("Script path updated.")
+            script_name = os.path.basename(a.data)
+            self.safe_status_update(f"Running Script: {script_name}")
+            self.update() # Force refresh to show "Running..."
+    
+            # Capture the True/False result from the engine
+            success = audio_engine.run_external_script(a.data)
+                
+            if success:
+                self.safe_status_update(f"SUCCESS: {script_name} finished")
+            else:
+                self.safe_status_update(f"ERROR: {script_name} failed")
+                
+            # Sleep for 2 seconds so you actually have time to read the status
+            time.sleep(2)
 
 
 
@@ -591,6 +602,30 @@ class RoutineApp(ctk.CTk):
                 for _ in range(int(a.data)):
                     if not self.is_running: break
                     time.sleep(1)
+
+            # --- SCRIPT LOGIC ---
+            elif a.type == "Script":
+                script_name = os.path.basename(a.data)
+                
+                # 1. Update status and FORCE the GUI to draw it immediately
+                self.safe_status_update(f"Running Script: {script_name}...")
+                self.update() 
+                
+                # 2. Run the script
+                success = audio_engine.run_external_script(a.data)
+                
+                # 3. Show the result
+                if success:
+                    self.safe_status_update(f"SUCCESS: {script_name} finished")
+                else:
+                    self.safe_status_update(f"ERROR: {script_name} failed")
+                
+                # 4. Wait 2 seconds so you can actually read the message
+                time.sleep(2)
+
+
+
+                    
 
         # Cleanup
         self.is_running = False

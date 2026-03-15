@@ -108,8 +108,22 @@ def wait_action(seconds):
     time.sleep(seconds)
 
 def run_external_script(script_path):
-    """Executes external Python scripts via OS system call."""
+    """Executes external Python scripts and returns True if successful."""
+    import subprocess
+    import sys
+    
+    script_dir = os.path.dirname(os.path.abspath(script_path))
+    
     try:
-        os.system(f"python \"{script_path}\"")
+        # sys.executable is the key—it points to the python.exe currently running
+        subprocess.run(
+            [sys.executable, script_path], 
+            cwd=script_dir, 
+            check=True, 
+            capture_output=True, 
+            text=True
+        )
+        return True
     except Exception as e:
         print(f"Script Error: {e}")
+        return False
