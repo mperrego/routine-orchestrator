@@ -259,6 +259,7 @@ class RoutineApp(ctk.CTk):
                         full_path, display_name = audio_engine.get_next_filename(item)
                         msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
                         self.after(0, lambda m=msg: self.safe_status_update(m))
+                        self.update_idletasks() # <--- Add this to force the UI to refresh
                         
                         if full_path:
                             audio_engine.play_audio(full_path)
@@ -266,11 +267,11 @@ class RoutineApp(ctk.CTk):
                             # CRITICAL: Keep the routine at this step until audio finishes
                             while audio_engine.is_playing() and self.is_running:
                                 time.sleep(0.1) # Check every 100ms
-            
-            # --- ANNOUNCEMENT ACTION ---
+                                
+            # --- ANNOUNCEMENT ---            
             elif a.type == "Announcement":
-                self.after(0, lambda: self.safe_status_update("Speaking Announcement..."))
-                # This is a blocking call, so it naturally waits for the voice to finish
+                self.safe_status_update(f"Announcing: {a.data[:20]}...")
+                self.update()
                 audio_engine.speak(a.data)
 
             # --- WAIT ACTION ---

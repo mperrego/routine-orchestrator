@@ -2,52 +2,24 @@
 Author: Michael
 Project: Routine Orchestrator
 File: audio_engine.py
-Version: 4.4
+Version: 5.1
 Date: 2026-03-14
-Description: Integrated pyttsx3 announcements with sequential/random audio logic.
+Description: Stable build using gTTS for announcements and pygame for playback.
 """
 
+import os
 import random
 import time
 import pygame
 from pydub import AudioSegment
-import pyttsx3
-import os
-import sys
-
-# --- WINDOWS PATH FIX ---
-# Ensures pyttsx3/pywin32 can find DLLs regardless of the Python launcher (IDLE vs CMD)
-if sys.platform == 'win32':
-    site_packages = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages")
-    paths = [
-        os.path.join(site_packages, "win32"),
-        os.path.join(site_packages, "win32", "lib"),
-        os.path.join(site_packages, "pywin32_system32")
-    ]
-    for p in paths:
-        if p not in sys.path:
-            sys.path.append(p)
-    try:
-        os.add_dll_directory(os.path.join(site_packages, "pywin32_system32"))
-    except (AttributeError, OSError):
-        pass
+from gtts import gTTS
 
 # --- INITIALIZATION ---
-# Initialize Voice Engine
-engine = pyttsx3.init()
-engine.setProperty('rate', 175) 
-
-# Initialize Audio Mixer
 if not pygame.mixer.get_init():
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
-# --- CORE FUNCTIONS ---
-
 def get_next_filename(item_data):
-    """
-    Predicts the next file to be played without playing it.
-    Returns the (full_path, display_name).
-    """
+    """Predicts the next file (Sequential/Random) and handles tracker files."""
     path = item_data.get("path")
     if not path or not os.path.exists(path):
         return None, "Path Not Found"
@@ -61,8 +33,6 @@ def get_next_filename(item_data):
         return None, "No Files Found"
 
     tracker_path = os.path.join(path, ".last_played.txt")
-    chosen_file = None
-    
     if item_data.get("mode") == "Sequential":
         last_played = ""
         if os.path.exists(tracker_path):
@@ -71,12 +41,8 @@ def get_next_filename(item_data):
                     last_played = f.read().strip()
             except: pass
         
-        if last_played in files:
-            next_idx = (files.index(last_played) + 1) % len(files)
-            chosen_file = files[next_idx]
-        else:
-            chosen_file = files[0]
-            
+        idx = (files.index(last_played) + 1) % len(files) if last_played in files else 0
+        chosen_file = files[idx]
         with open(tracker_path, 'w', encoding='utf-8') as f:
             f.write(chosen_file)
     else:
@@ -84,15 +50,10 @@ def get_next_filename(item_data):
         
     return os.path.join(path, chosen_file), chosen_file
 
-def stop_audio():
-    """Immediately halts the pygame mixer."""
-    pygame.mixer.music.stop()
-
 def play_audio(file_path):
-    """Handles playback and monitors for interruptions."""
+    """Plays audio via pygame. Handles conversion for non-standard formats."""
     try:
         ext = file_path.lower()
-        # Convert non-standard formats to MP3 on the fly
         if not (ext.endswith('.mp3') or ext.endswith('.wav')):
             audio = AudioSegment.from_file(file_path)
             temp_path = "temp_converted.mp3"
@@ -101,30 +62,54 @@ def play_audio(file_path):
             
         pygame.mixer.music.load(file_path)
         pygame.mixer.music.play()
-        
     except Exception as e:
-        print(f"Engine Error: {e}")
+        print(f"Playback Error: {e}")
+
+def stop_audio():
+    """Immediately stops all audio playback."""
+    pygame.mixer.music.stop()
+    pygame.mixer.music.unload()
 
 def speak(text):
-    """Voice Announcement logic."""
-    if text:
-        engine.say(text)
-        engine.runAndWait()
+    """Generates a Google TTS MP3 and plays it through the audio mixer."""
+    if not text:
+        return
+    temp_file = "temp_announcement.mp3"
+    try:
+        # Clear the mixer and generate speech
+        pygame.mixer.music.unload() 
+        tts = gTTS(text=text, lang='en')
+        tts.save(temp_file)
+        
+        # Play the speech
+        play_audio(temp_file)
+        
+        # Block until speaking is done
+        while is_playing():
+            time.sleep(0.1)
+            
+    except Exception as e:
+        print(f"Speech Error: {e}")
+    finally:
+        # Give a moment to release the file, then try to remove the temp file
+        try:
+            pygame.mixer.music.unload()
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except:
+            pass
 
 def is_playing():
-    """
-    Checks if audio is currently playing. 
-    Note: pyttsx3 is blocking, so this mainly tracks the pygame mixer.
-    """
+    """Checks if the pygame mixer is currently busy."""
     return pygame.mixer.music.get_busy()
 
-def run_external_script(script_path):
-    """Executes external Python scripts."""
-    try: 
-        os.system(f"python \"{script_path}\"")
-    except Exception as e: 
-        print(f"Script Error: {e}")
-
 def wait_action(seconds):
-    """Standard pause for routine steps."""
+    """A standard blocking pause."""
     time.sleep(seconds)
+
+def run_external_script(script_path):
+    """Executes external Python scripts via OS system call."""
+    try:
+        os.system(f"python \"{script_path}\"")
+    except Exception as e:
+        print(f"Script Error: {e}")
