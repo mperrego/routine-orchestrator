@@ -17,6 +17,7 @@ import sys
 import pygame
 import json
 import tkinter as tk
+import time
 
 class Action:
     def __init__(self, action_type, data, wait_on_completion=True):
@@ -76,6 +77,7 @@ class RoutineApp(ctk.CTk):
         ctk.CTkButton(f_create, text="+ Add Audio", width=140, command=lambda: self.add_action("Audio")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Wait", width=100, command=lambda: self.add_action("Wait")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Script", width=100, command=lambda: self.add_action("Script")).pack(side="left", padx=5)
+        ctk.CTkButton(f_create, text="+ Announcement", width=120, command=lambda: self.add_action("Announcement")).pack(side="left", padx=5)
 
         # 8. UI COMPONENTS - EDIT ACTIONS GROUP (Management)
         f_edit_container = ctk.CTkFrame(self)
@@ -233,6 +235,7 @@ class RoutineApp(ctk.CTk):
         audio_engine.stop_audio()
         self.safe_status_update("Routine Stopped.")
 
+
     def run_routine(self):
         """Sequentially executes actions and handles the Skip/Stop states."""
         self.is_running = True
@@ -246,33 +249,50 @@ class RoutineApp(ctk.CTk):
             if not self.is_running: 
                 break
             
+            # --- AUDIO ACTION ---
             if a.type == "Audio":
                 for item in a.data:
                     repeat_count = item.get('repeat', 1)
                     for i in range(repeat_count):
                         if not self.is_running: break
                         
-                        # Get filename and update status BEFORE playing
                         full_path, display_name = audio_engine.get_next_filename(item)
                         msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
                         self.after(0, lambda m=msg: self.safe_status_update(m))
                         
                         if full_path:
                             audio_engine.play_audio(full_path)
+                            
+                            # CRITICAL: Keep the routine at this step until audio finishes
+                            while audio_engine.is_playing() and self.is_running:
+                                time.sleep(0.1) # Check every 100ms
             
+            # --- ANNOUNCEMENT ACTION ---
+            elif a.type == "Announcement":
+                self.after(0, lambda: self.safe_status_update("Speaking Announcement..."))
+                # This is a blocking call, so it naturally waits for the voice to finish
+                audio_engine.speak(a.data)
+
+            # --- WAIT ACTION ---
             elif a.type == "Wait":
                 self.after(0, lambda: self.safe_status_update(f"Wait: {a.data}s..."))
-                audio_engine.wait_action(a.data)
+                # For longer waits, it's better to loop so we can 'Stop' mid-wait
+                for _ in range(int(a.data)):
+                    if not self.is_running: break
+                    time.sleep(1)
                 
+            # --- SCRIPT ACTION ---
             elif a.type == "Script":
                 self.after(0, lambda: self.safe_status_update(f"Running: {os.path.basename(a.data)}"))
                 audio_engine.run_external_script(a.data)
         
         # Reset UI when finished
+        self.is_running = False
         self.safe_status_update("Ready")
         self.after(0, lambda: self.play_btn.configure(state="normal"))
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
         self.after(0, lambda: self.skip_btn.configure(state="disabled"))
+
 
     def safe_status_update(self, msg):
         """Ensures the status label is updated safely across threads."""
@@ -373,6 +393,17 @@ class RoutineApp(ctk.CTk):
             self.update_display()
 
         # 3. SCRIPT ACTION
+
+        elif atype == "Announcement":
+            # Ask the user what they want the AI to say
+            text = ctk.CTkInputDialog(text="Enter the announcement text:", title="New Announcement").get_input()
+            if text:
+                new_action = Action("Announcement", text, True)
+                self.actions.append(new_action)
+                self.update_display()
+
+
+        # 4. SCRIPT ACTION
         elif atype == "Script":
             # Open file dialog using the last used script directory
             f = filedialog.askopenfilename(
@@ -429,21 +460,66 @@ class RoutineApp(ctk.CTk):
                 if a.wait_on_completion: cb.select()
                 cb.pack(side="right", padx=10)
 
+
     def edit_action(self):
+        """
+        Unified editor for all action types. 
+        Detects the selected action and opens the correct input dialog or window.
+        """
         idx = self.selected_index.get()
-        if idx < 0 or idx >= len(self.actions): return
+        
+        # 1. Validation: Ensure a valid index is selected
+        if idx < 0 or idx >= len(self.actions): 
+            return
+            
         a = self.actions[idx]
+
+        # 2. AUDIO: Open the specialized sequence editor from editors.py
         if a.type == "Audio":
+            # Assuming 'editors' is imported at the top of your script
             editors.AudioSequenceEditor(self, a)
-        elif a.type == "Wait":
-            v = simpledialog.askinteger("Edit Wait", "Seconds:", initialvalue=a.data)
-            if v: a.data = v; self.update_display()
-        elif a.type == "Script":
-            f = filedialog.askopenfilename(initialdir=os.path.dirname(a.data))
-            if f:
-                self.last_used_dir = os.path.dirname(f)
-                a.data = f
+
+        # 3. ANNOUNCEMENT: Open a text input dialog
+        elif a.type == "Announcement":
+            # initial_value isn't a direct argument for CTkInputDialog, 
+            # so we just show the dialog to get the new string.
+            dialog = ctk.CTkInputDialog(text="Edit announcement text:", title="Edit Announcement")
+            new_text = dialog.get_input()
+            
+            if new_text is not None and new_text.strip() != "":
+                a.data = new_text
                 self.update_display()
+                self.safe_status_update("Announcement updated.")
+
+        # 4. WAIT: Edit seconds using a dialog
+        elif a.type == "Wait":
+            dialog = ctk.CTkInputDialog(text="Enter wait time (seconds):", title="Edit Wait")
+            v = dialog.get_input()
+            
+            if v and v.isdigit():
+                a.data = int(v)
+                self.update_display()
+                self.safe_status_update(f"Wait updated to {v}s.")
+
+        # 5. SCRIPT: Change the target Python file
+        elif a.type == "Script":
+            # Default to the directory of the current script in the action
+            current_dir = os.path.dirname(a.data) if a.data else self.last_script_dir
+            
+            f = filedialog.askopenfilename(
+                initialdir=current_dir,
+                title="Select New Script",
+                filetypes=[("Python Files", "*.py")]
+            )
+            
+            if f:
+                self.last_script_dir = os.path.dirname(f)
+                a.data = f
+                self.save_settings() # Save the new preferred script directory
+                self.update_display()
+                self.safe_status_update("Script path updated.")
+
+
 
     def move_action(self, d):
         idx = self.selected_index.get()
@@ -478,48 +554,42 @@ class RoutineApp(ctk.CTk):
         self.is_running = True
         
         for a in self.actions:
-            if not self.is_running: 
-                break
+            if not self.is_running: break
             
+            # --- AUDIO LOGIC ---
             if a.type == "Audio":
                 for item in a.data:
-                    if not self.is_running: 
-                        break
-                        
+                    if not self.is_running: break
+                    
                     repeat_count = item.get('repeat', 1)
                     for i in range(repeat_count):
-                        if not self.is_running: 
-                            break
+                        if not self.is_running: break
                         
                         full_path, display_name = audio_engine.get_next_filename(item)
-                        msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
-                        self.after(0, lambda m=msg: self.safe_status_update(m))
-                        
                         if full_path:
-                            # 1. Start the audio
+                            # Start playback
                             audio_engine.play_audio(full_path)
                             
-                            # 2. Check if we need to wait before moving to the next file/action
-                            if a.wait_on_completion:
-                                # This loop polls the audio engine to see if it's still busy
-                                while audio_engine.is_playing() and self.is_running:
-                                    time.sleep(0.1) # Small sleep to prevent CPU spiking
+                            # CRITICAL: Wait for the file to finish before moving to the next
+                            # This loop keeps the routine alive while the music plays
+                            while audio_engine.is_playing() and self.is_running:
+                                time.sleep(0.1) 
 
+            # --- ANNOUNCEMENT LOGIC ---
+            elif a.type == "Announcement":
+                # Speak is blocking, so the routine stays here until finished
+                audio_engine.speak(a.data)
+
+            # --- OTHER ACTIONS ---
             elif a.type == "Wait":
-                # Ensure your Wait logic also checks self.is_running
-                duration = int(a.data)
-                for _ in range(duration):
+                # Ensure your wait logic is also checking self.is_running
+                for _ in range(int(a.data)):
                     if not self.is_running: break
                     time.sleep(1)
 
-            elif a.type == "Script":
-                # Your existing script execution logic here
-                pass
-
-        # Cleanup after routine ends or is stopped
+        # Cleanup
         self.is_running = False
         self.after(0, self.reset_ui_after_run)
-        
 
     def reset_ui_after_run(self):
         """Restores the button states when the routine ends."""

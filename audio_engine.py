@@ -2,27 +2,54 @@
 Author: Michael
 Project: Routine Orchestrator
 File: audio_engine.py
-Version: 4.3
+Version: 4.4
 Date: 2026-03-14
+Description: Integrated pyttsx3 announcements with sequential/random audio logic.
 """
 
-import os
 import random
 import time
 import pygame
 from pydub import AudioSegment
+import pyttsx3
+import os
+import sys
 
+# --- WINDOWS PATH FIX ---
+# Ensures pyttsx3/pywin32 can find DLLs regardless of the Python launcher (IDLE vs CMD)
+if sys.platform == 'win32':
+    site_packages = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages")
+    paths = [
+        os.path.join(site_packages, "win32"),
+        os.path.join(site_packages, "win32", "lib"),
+        os.path.join(site_packages, "pywin32_system32")
+    ]
+    for p in paths:
+        if p not in sys.path:
+            sys.path.append(p)
+    try:
+        os.add_dll_directory(os.path.join(site_packages, "pywin32_system32"))
+    except (AttributeError, OSError):
+        pass
+
+# --- INITIALIZATION ---
+# Initialize Voice Engine
+engine = pyttsx3.init()
+engine.setProperty('rate', 175) 
+
+# Initialize Audio Mixer
 if not pygame.mixer.get_init():
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
-# --- THIS IS THE MISSING FUNCTION ---
+# --- CORE FUNCTIONS ---
+
 def get_next_filename(item_data):
     """
     Predicts the next file to be played without playing it.
     Returns the (full_path, display_name).
     """
     path = item_data.get("path")
-    if not os.path.exists(path):
+    if not path or not os.path.exists(path):
         return None, "Path Not Found"
 
     if os.path.isfile(path):
@@ -64,8 +91,8 @@ def stop_audio():
 def play_audio(file_path):
     """Handles playback and monitors for interruptions."""
     try:
-        # (Handling for non-standard formats...)
         ext = file_path.lower()
+        # Convert non-standard formats to MP3 on the fly
         if not (ext.endswith('.mp3') or ext.endswith('.wav')):
             audio = AudioSegment.from_file(file_path)
             temp_path = "temp_converted.mp3"
@@ -75,17 +102,29 @@ def play_audio(file_path):
         pygame.mixer.music.load(file_path)
         pygame.mixer.music.play()
         
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
     except Exception as e:
         print(f"Engine Error: {e}")
 
-def run_external_script(script_path):
-    try: os.system(f"python \"{script_path}\"")
-    except Exception as e: print(f"Script Error: {e}")
-
-def wait_action(seconds):
-    time.sleep(seconds)
+def speak(text):
+    """Voice Announcement logic."""
+    if text:
+        engine.say(text)
+        engine.runAndWait()
 
 def is_playing():
+    """
+    Checks if audio is currently playing. 
+    Note: pyttsx3 is blocking, so this mainly tracks the pygame mixer.
+    """
     return pygame.mixer.music.get_busy()
+
+def run_external_script(script_path):
+    """Executes external Python scripts."""
+    try: 
+        os.system(f"python \"{script_path}\"")
+    except Exception as e: 
+        print(f"Script Error: {e}")
+
+def wait_action(seconds):
+    """Standard pause for routine steps."""
+    time.sleep(seconds)
