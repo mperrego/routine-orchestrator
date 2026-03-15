@@ -258,20 +258,29 @@ class RoutineApp(ctk.CTk):
                         
                         full_path, display_name = audio_engine.get_next_filename(item)
                         msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
-                        self.after(0, lambda m=msg: self.safe_status_update(m))
-                        self.update_idletasks() # <--- Add this to force the UI to refresh
+                        
+                        # 1. Update the label text directly
+                        self.status_label.configure(text=msg)
+                        
+                        # 2. FORCE the GUI to stop and redraw right now
+                        self.update() 
+                        
+                        # 3. Give a tiny 'breath' (50ms) for the screen to refresh
+                        time.sleep(0.05)
                         
                         if full_path:
                             audio_engine.play_audio(full_path)
                             
-                            # CRITICAL: Keep the routine at this step until audio finishes
+                            # Stay here until audio finishes
                             while audio_engine.is_playing() and self.is_running:
-                                time.sleep(0.1) # Check every 100ms
+                                time.sleep(0.1)
                                 
             # --- ANNOUNCEMENT ---            
             elif a.type == "Announcement":
-                self.safe_status_update(f"Announcing: {a.data[:20]}...")
-                self.update()
+                # Show the first 30 characters of the text in the status bar
+                self.safe_status_update(f"Announcing: {a.data[:30]}...")
+                self.update()  # <--- Force refresh
+    
                 audio_engine.speak(a.data)
 
             # --- WAIT ACTION ---
@@ -284,7 +293,10 @@ class RoutineApp(ctk.CTk):
                 
             # --- SCRIPT ACTION ---
             elif a.type == "Script":
-                self.after(0, lambda: self.safe_status_update(f"Running: {os.path.basename(a.data)}"))
+                script_name = os.path.basename(a.data)
+                self.safe_status_update(f"Running Script: {script_name}")
+                self.update()  # <--- Force refresh
+    
                 audio_engine.run_external_script(a.data)
         
         # Reset UI when finished
