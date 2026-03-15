@@ -3,7 +3,7 @@ Author: Michael
 Project: Routine Orchestrator
 File: Orchestrator_main_gui.py
 Description: Added SKIP button and renamed folder addition button.
-Version: 7.0
+Version: 7.5
 Date: 2026-03-14
 """
 
@@ -232,7 +232,7 @@ class RoutineApp(ctk.CTk):
         """Sequentially executes actions and handles the Skip/Stop states."""
         self.is_running = True
         
-        # UI State Management
+        # 1. UI State Management - Disable Play, Enable Stop/Skip
         self.after(0, lambda: self.play_btn.configure(state="disabled"))
         self.after(0, lambda: self.stop_btn.configure(state="normal"))
         self.after(0, lambda: self.skip_btn.configure(state="normal"))
@@ -244,70 +244,72 @@ class RoutineApp(ctk.CTk):
             # --- AUDIO ACTION ---
             if a.type == "Audio":
                 for item in a.data:
+                    if not self.is_running: break
                     repeat_count = item.get('repeat', 1)
                     for i in range(repeat_count):
                         if not self.is_running: break
                         
                         full_path, display_name = audio_engine.get_next_filename(item)
-                        msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
-                        
-                        # 1. Update the label text directly
-                        self.status_label.configure(text=msg)
-                        
-                        # 2. FORCE the GUI to stop and redraw right now
-                        self.update() 
-                        
-                        # 3. Give a tiny 'breath' (50ms) for the screen to refresh
-                        time.sleep(0.05)
-                        
                         if full_path:
+                            # Update Status Bar with progress (v7.0 TOPONE style)
+                            msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
+                            self.safe_status_update(msg)
+                            self.update() # Force UI refresh
+                            
                             audio_engine.play_audio(full_path)
                             
-                            # Stay here until audio finishes
+                            # Wait for file to finish or for User to hit STOP/SKIP
                             while audio_engine.is_playing() and self.is_running:
                                 time.sleep(0.1)
-                                
-            # --- ANNOUNCEMENT ---            
+
+            # --- ANNOUNCEMENT ACTION ---
             elif a.type == "Announcement":
-                # Show the first 30 characters of the text in the status bar
-                self.safe_status_update(f"Announcing: {a.data[:30]}...")
-                self.update()  # <--- Force refresh
-    
+                self.safe_status_update(f"Announcement: {a.data[:30]}...")
+                self.update()
                 audio_engine.speak(a.data)
+                # Ensure we wait if the engine is busy
+                while audio_engine.is_playing() and self.is_running:
+                    time.sleep(0.1)
 
             # --- WAIT ACTION ---
             elif a.type == "Wait":
-                self.after(0, lambda: self.safe_status_update(f"Wait: {a.data}s..."))
-                # For longer waits, it's better to loop so we can 'Stop' mid-wait
-                for _ in range(int(a.data)):
+                for s in range(int(a.data)):
                     if not self.is_running: break
+                    self.safe_status_update(f"Wait: {int(a.data)-s}s remaining")
+                    self.update()
                     time.sleep(1)
                 
             # --- SCRIPT ACTION ---
             elif a.type == "Script":
                 script_name = os.path.basename(a.data)
-                self.safe_status_update(f"Running Script: {script_name}")
+                self.safe_status_update(f"Running Script: {script_name}...")
+                self.update()
                 
-                # Call our updated engine and get the result
+                # Execute via our verified subprocess logic
                 success = audio_engine.run_external_script(a.data)
                 
                 if success:
                     self.safe_status_update(f"SUCCESS: {script_name} finished")
                 else:
-                    # We use a slightly different message for errors
                     self.safe_status_update(f"ERROR: {script_name} failed")
                 
-                # Give the user 2 seconds to see the status before moving on
+                # Brief pause so the user can read the success/fail message
                 time.sleep(2)
-    
-                audio_engine.run_external_script(a.data)
         
-        # Reset UI when finished
+        # --- ROUTINE COMPLETE ---
         self.is_running = False
         self.safe_status_update("Ready")
+        
+        # Reset UI Buttons
         self.after(0, lambda: self.play_btn.configure(state="normal"))
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
         self.after(0, lambda: self.skip_btn.configure(state="disabled"))
+
+        # 2. CLI AUTO-CLOSE LOGIC (From BOTTOMONE)
+        if self.auto_close:
+            print("CLI Routine complete. Auto-closing in 3 seconds...")
+            time.sleep(3) 
+            self.on_closing()
 
 
     def safe_status_update(self, msg):
@@ -564,80 +566,6 @@ class RoutineApp(ctk.CTk):
             self.skip_btn.configure(state="normal")
             
             threading.Thread(target=self.run_routine, daemon=True).start()
-
-    def run_routine(self):
-        """Executes the routine logic."""
-        self.is_running = True
-        
-        for a in self.actions:
-            if not self.is_running: break
-            
-            # --- AUDIO LOGIC ---
-            if a.type == "Audio":
-                for item in a.data:
-                    if not self.is_running: break
-                    
-                    repeat_count = item.get('repeat', 1)
-                    for i in range(repeat_count):
-                        if not self.is_running: break
-                        
-                        full_path, display_name = audio_engine.get_next_filename(item)
-                        if full_path:
-                            # Start playback
-                            audio_engine.play_audio(full_path)
-                            
-                            # CRITICAL: Wait for the file to finish before moving to the next
-                            # This loop keeps the routine alive while the music plays
-                            while audio_engine.is_playing() and self.is_running:
-                                time.sleep(0.1) 
-
-            # --- ANNOUNCEMENT LOGIC ---
-            elif a.type == "Announcement":
-                # Speak is blocking, so the routine stays here until finished
-                audio_engine.speak(a.data)
-
-            # --- OTHER ACTIONS ---
-            elif a.type == "Wait":
-                # Ensure your wait logic is also checking self.is_running
-                for _ in range(int(a.data)):
-                    if not self.is_running: break
-                    time.sleep(1)
-
-            # --- SCRIPT LOGIC ---
-            elif a.type == "Script":
-                script_name = os.path.basename(a.data)
-                
-                # 1. Update status and FORCE the GUI to draw it immediately
-                self.safe_status_update(f"Running Script: {script_name}...")
-                self.update() 
-                
-                # 2. Run the script
-                success = audio_engine.run_external_script(a.data)
-                
-                # 3. Show the result
-                if success:
-                    self.safe_status_update(f"SUCCESS: {script_name} finished")
-                else:
-                    self.safe_status_update(f"ERROR: {script_name} failed")
-                
-                # 4. Wait 2 seconds so you can actually read the message
-                time.sleep(2)
-
-
-
-                    
-
-        # Cleanup
-        self.is_running = False
-        self.after(0, self.reset_ui_after_run)
-
-        # NEW: If we started from CLI, close the program now
-        if self.auto_close:
-            print("CLI Routine complete. Auto-closing in 3 seconds...")
-            time.sleep(3) # Give the user a moment to see the 'Ready' status
-            self.on_closing() # Uses your existing cleanup and exit method
-
-
 
     def reset_ui_after_run(self):
         """Restores the button states when the routine ends."""

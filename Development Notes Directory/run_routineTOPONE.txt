@@ -1,0 +1,80 @@
+    def run_routine(self):
+        """Sequentially executes actions and handles the Skip/Stop states."""
+        self.is_running = True
+        
+        # UI State Management
+        self.after(0, lambda: self.play_btn.configure(state="disabled"))
+        self.after(0, lambda: self.stop_btn.configure(state="normal"))
+        self.after(0, lambda: self.skip_btn.configure(state="normal"))
+        
+        for a in self.actions:
+            if not self.is_running: 
+                break
+            
+            # --- AUDIO ACTION ---
+            if a.type == "Audio":
+                for item in a.data:
+                    repeat_count = item.get('repeat', 1)
+                    for i in range(repeat_count):
+                        if not self.is_running: break
+                        
+                        full_path, display_name = audio_engine.get_next_filename(item)
+                        msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
+                        
+                        # 1. Update the label text directly
+                        self.status_label.configure(text=msg)
+                        
+                        # 2. FORCE the GUI to stop and redraw right now
+                        self.update() 
+                        
+                        # 3. Give a tiny 'breath' (50ms) for the screen to refresh
+                        time.sleep(0.05)
+                        
+                        if full_path:
+                            audio_engine.play_audio(full_path)
+                            
+                            # Stay here until audio finishes
+                            while audio_engine.is_playing() and self.is_running:
+                                time.sleep(0.1)
+                                
+            # --- ANNOUNCEMENT ---            
+            elif a.type == "Announcement":
+                # Show the first 30 characters of the text in the status bar
+                self.safe_status_update(f"Announcing: {a.data[:30]}...")
+                self.update()  # <--- Force refresh
+    
+                audio_engine.speak(a.data)
+
+            # --- WAIT ACTION ---
+            elif a.type == "Wait":
+                self.after(0, lambda: self.safe_status_update(f"Wait: {a.data}s..."))
+                # For longer waits, it's better to loop so we can 'Stop' mid-wait
+                for _ in range(int(a.data)):
+                    if not self.is_running: break
+                    time.sleep(1)
+                
+            # --- SCRIPT ACTION ---
+            elif a.type == "Script":
+                script_name = os.path.basename(a.data)
+                self.safe_status_update(f"Running Script: {script_name}")
+                
+                # Call our updated engine and get the result
+                success = audio_engine.run_external_script(a.data)
+                
+                if success:
+                    self.safe_status_update(f"SUCCESS: {script_name} finished")
+                else:
+                    # We use a slightly different message for errors
+                    self.safe_status_update(f"ERROR: {script_name} failed")
+                
+                # Give the user 2 seconds to see the status before moving on
+                time.sleep(2)
+    
+                audio_engine.run_external_script(a.data)
+        
+        # Reset UI when finished
+        self.is_running = False
+        self.safe_status_update("Ready")
+        self.after(0, lambda: self.play_btn.configure(state="normal"))
+        self.after(0, lambda: self.stop_btn.configure(state="disabled"))
+        self.after(0, lambda: self.skip_btn.configure(state="disabled"))
