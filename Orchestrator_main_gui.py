@@ -52,6 +52,7 @@ class RoutineApp(ctk.CTk):
         self.actions = []
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
+        self.auto_close = False  
         
         # Initialize the menu bar
         self.setup_menu()
@@ -124,6 +125,7 @@ class RoutineApp(ctk.CTk):
         # ... inside RoutineApp.__init__ ...
         # After all UI is built, check for CLI arguments
         if len(sys.argv) > 1:
+            self.auto_close = True # <--- ADD THIS: Mark for automatic shutdown
             # We use after() to wait 100ms for the GUI to fully render 
             # before starting the heavy lifting
             self.after(100, lambda: self.load_and_run_from_cli(sys.argv[1]))
@@ -603,6 +605,14 @@ class RoutineApp(ctk.CTk):
         # Cleanup
         self.is_running = False
         self.after(0, self.reset_ui_after_run)
+
+        # NEW: If we started from CLI, close the program now
+        if self.auto_close:
+            print("CLI Routine complete. Auto-closing in 3 seconds...")
+            time.sleep(3) # Give the user a moment to see the 'Ready' status
+            self.on_closing() # Uses your existing cleanup and exit method
+
+
 
     def reset_ui_after_run(self):
         """Restores the button states when the routine ends."""
