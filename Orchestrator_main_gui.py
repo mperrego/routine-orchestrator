@@ -3,7 +3,7 @@ Author: Michael
 Project: Routine Orchestrator
 File: Orchestrator_main_gui.py
 Description: Added SKIP button and renamed folder addition button.
-Version: 7.5
+Version: 8.5
 Date: 2026-03-14
 """
 

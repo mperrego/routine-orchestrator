@@ -19,37 +19,56 @@ if not pygame.mixer.get_init():
     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 
 def get_next_filename(item_data):
-    """Predicts the next file (Sequential/Random) and handles tracker files."""
+    """Predicts the next file and updates the .last_played.txt bookmark for ALL audio actions."""
     path = item_data.get("path")
     if not path or not os.path.exists(path):
         return None, "Path Not Found"
 
+    # --- 1. DEFINE DIRECTORY AND TRACKER ---
     if os.path.isfile(path):
-        return path, os.path.basename(path)
-    
+        # If it's a file, the 'folder' is the directory it sits in
+        folder_path = os.path.dirname(path)
+        chosen_file = os.path.basename(path)
+    else:
+        # If it's a folder, the 'folder' is the path itself
+        folder_path = path
+        chosen_file = None
+
+    tracker_path = os.path.join(folder_path, ".last_played.txt")
     valid_exts = ('.mp3', '.wav', '.m4a')
-    files = sorted([f for f in os.listdir(path) if f.lower().endswith(valid_exts)])
+    
+    # Get alphabetical list for the directory
+    files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith(valid_exts)])
     if not files:
         return None, "No Files Found"
 
-    tracker_path = os.path.join(path, ".last_played.txt")
-    if item_data.get("mode") == "Sequential":
-        last_played = ""
-        if os.path.exists(tracker_path):
-            try:
-                with open(tracker_path, 'r', encoding='utf-8') as f:
-                    last_played = f.read().strip()
-            except: pass
+    # --- 2. SELECTION LOGIC (Only for Folders) ---
+    if not chosen_file:
+        if item_data.get("mode") == "Sequential":
+            last_played = ""
+            if os.path.exists(tracker_path):
+                try:
+                    with open(tracker_path, 'r', encoding='utf-8') as f:
+                        last_played = f.read().strip()
+                except:
+                    pass
+            
+            idx = (files.index(last_played) + 1) % len(files) if last_played in files else 0
+            chosen_file = files[idx]
+        else:
+            # Random Mode
+            import random
+            chosen_file = random.choice(files)
         
-        idx = (files.index(last_played) + 1) % len(files) if last_played in files else 0
-        chosen_file = files[idx]
+    # --- 3. UNIVERSAL BOOKMARK UPDATE ---
+    # This now runs for single files AND folders
+    try:
         with open(tracker_path, 'w', encoding='utf-8') as f:
             f.write(chosen_file)
-    else:
-        chosen_file = random.choice(files)
+    except Exception as e:
+        print(f"Error updating tracker in {folder_path}: {e}")
         
-    return os.path.join(path, chosen_file), chosen_file
-
+    return os.path.join(folder_path, chosen_file), chosen_file
 def play_audio(file_path):
     """Plays audio via pygame. Handles conversion for non-standard formats."""
     try:
