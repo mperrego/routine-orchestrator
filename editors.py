@@ -23,6 +23,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.parent_app = parent
         self.attributes("-topmost", True)
         self.repeat_entries = []
+        self.duration_entries = []
         
         # 2. Directory Tracking
         self.editor_last_dir = parent.last_audio_dir
@@ -79,12 +80,17 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             self.action.data = []
             self.update_list()
 
-
     def sync_data(self):
-        for idx, entry in self.repeat_entries:
-            val = entry.get()
-            if idx < len(self.action.data):
-                self.action.data[idx]["repeat"] = int(val) if val.isdigit() else 1
+        """Updates the underlying action data with values from the entry boxes."""
+        for i in range(len(self.action.data)):
+            try:
+                # Sync Repeat Count
+                self.action.data[i]['repeat'] = int(self.repeat_entries[i].get())
+                
+                # Sync Duration
+                self.action.data[i]['duration'] = int(self.duration_entries[i].get())
+            except (ValueError, IndexError):
+                pass
 
     def close_and_refresh(self):
         self.sync_data()
@@ -138,6 +144,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         """Rebuilds the list and restores the file-preview text box for folders."""
         for w in self.list_frame.winfo_children(): w.destroy()
         self.repeat_entries = []
+        self.duration_entries = []  # Add this here to clear the list on every refresh
         valid_exts = ('.mp3', '.wav', '.m4a')
         
         for i, item in enumerate(self.action.data):
@@ -156,11 +163,19 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                 ctk.CTkButton(header, text=item['mode'], width=90, 
                              command=lambda idx=i: self.toggle_mode(idx)).pack(side="left", padx=20)
             
+            # Repeat Count
             ctk.CTkLabel(header, text="Play:").pack(side="left", padx=(10, 0))
             ent = ctk.CTkEntry(header, width=40)
             ent.insert(0, str(item.get('repeat', 1)))
             ent.pack(side="left", padx=5)
-            self.repeat_entries.append((i, ent))
+            self.repeat_entries.append(ent) 
+
+            # Duration (Timed Playback)
+            ctk.CTkLabel(header, text="Sec (0=Full):").pack(side="left", padx=(10, 0))
+            dur_ent = ctk.CTkEntry(header, width=45)
+            dur_ent.insert(0, str(item.get('duration', 0))) 
+            dur_ent.pack(side="left", padx=5)
+            self.duration_entries.append(dur_ent)
             
             ctk.CTkButton(header, text="Remove", fg_color="darkred", width=70, 
                          command=lambda idx=i: self.remove_item(idx)).pack(side="right")

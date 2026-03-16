@@ -241,25 +241,32 @@ class RoutineApp(ctk.CTk):
             if not self.is_running: 
                 break
             
-            # --- AUDIO ACTION ---
+            # --- AUDIO ACTION (With Time Constraint) ---
             if a.type == "Audio":
                 for item in a.data:
                     if not self.is_running: break
                     repeat_count = item.get('repeat', 1)
+                    duration_limit = int(item.get('duration', 0)) # 0 means play full file
+
                     for i in range(repeat_count):
                         if not self.is_running: break
                         
                         full_path, display_name = audio_engine.get_next_filename(item)
                         if full_path:
-                            # Update Status Bar with progress (v7.0 TOPONE style)
-                            msg = f"({i+1}/{repeat_count}) Playing: {display_name}"
-                            self.safe_status_update(msg)
-                            self.update() # Force UI refresh
+                            self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}")
+                            self.update()
                             
                             audio_engine.play_audio(full_path)
+                            start_time = time.time() # Start the clock
                             
-                            # Wait for file to finish or for User to hit STOP/SKIP
                             while audio_engine.is_playing() and self.is_running:
+                                # Check if we have a time limit and if we've exceeded it
+                                if duration_limit > 0:
+                                    elapsed = time.time() - start_time
+                                    if elapsed >= duration_limit:
+                                        audio_engine.stop_audio() # Force stop
+                                        break
+                                
                                 time.sleep(0.1)
 
             # --- ANNOUNCEMENT ACTION ---
@@ -465,12 +472,21 @@ class RoutineApp(ctk.CTk):
                 self.edit_action()
             rb.bind("<Double-1>", on_double_click)
 
+            # --- UPDATED NESTED AUDIO LIST ---
             if a.type == "Audio":
                 sub_list = ctk.CTkFrame(self.list_frame, fg_color="transparent")
                 sub_list.pack(fill="x", padx=45)
                 for item in a.data:
                     name = os.path.basename(item['path'])
+                    
+                    # Create the base description
                     txt = f"↳ {name} ({item['mode']}) x{item['repeat']}"
+                    
+                    # Add the duration logic you requested
+                    duration = item.get('duration', 0)
+                    if duration > 0:
+                        txt += f" | playing for {duration} seconds"
+                    
                     ctk.CTkLabel(sub_list, text=txt, font=("Arial", 11, "italic"), text_color="#3a7ebf").pack(anchor="w")
 
             if i > 0:
