@@ -208,14 +208,6 @@ class RoutineApp(ctk.CTk):
         self.save_settings()
         messagebox.showinfo("Reset", "Directory trackers have been reset to the program folder.")
         
-    def new_routine(self):
-        if tk.messagebox.askyesno("New Routine", "Clear current actions?"):
-            self.actions = []
-            self.update_display()
-
-    def show_about(self):
-        tk.messagebox.showinfo("About", "Routine Orchestrator v7.1\nPersonal Automation Suite")
-
     def skip_item(self):
         """Interrupts current audio. The loop will then move to the next item."""
         audio_engine.stop_audio()
@@ -231,92 +223,97 @@ class RoutineApp(ctk.CTk):
     def run_routine(self):
         """Sequentially executes actions and handles the Skip/Stop states."""
         self.is_running = True
-        
-        # 1. UI State Management - Disable Play, Enable Stop/Skip
+
+        # UI State Management - Disable Play, Enable Stop/Skip
         self.after(0, lambda: self.play_btn.configure(state="disabled"))
         self.after(0, lambda: self.stop_btn.configure(state="normal"))
         self.after(0, lambda: self.skip_btn.configure(state="normal"))
-        
+
         for a in self.actions:
-            if not self.is_running: 
+            if not self.is_running:
                 break
-            
-            # --- AUDIO ACTION (With Time Constraint) ---
+
             if a.type == "Audio":
-                for item in a.data:
-                    if not self.is_running: break
-                    repeat_count = item.get('repeat', 1)
-                    duration_limit = int(item.get('duration', 0)) # 0 means play full file
-
-                    for i in range(repeat_count):
-                        if not self.is_running: break
-                        
-                        full_path, display_name = audio_engine.get_next_filename(item)
-                        if full_path:
-                            self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}")
-                            self.update()
-                            
-                            audio_engine.play_audio(full_path)
-                            start_time = time.time() # Start the clock
-                            
-                            while audio_engine.is_playing() and self.is_running:
-                                # Check if we have a time limit and if we've exceeded it
-                                if duration_limit > 0:
-                                    elapsed = time.time() - start_time
-                                    if elapsed >= duration_limit:
-                                        audio_engine.stop_audio() # Force stop
-                                        break
-                                
-                                time.sleep(0.1)
-
-            # --- ANNOUNCEMENT ACTION ---
+                self._run_audio_action(a)
             elif a.type == "Announcement":
-                self.safe_status_update(f"Announcement: {a.data[:30]}...")
-                self.update()
-                audio_engine.speak(a.data)
-                # Ensure we wait if the engine is busy
-                while audio_engine.is_playing() and self.is_running:
-                    time.sleep(0.1)
-
-            # --- WAIT ACTION ---
+                self._run_announcement_action(a)
             elif a.type == "Wait":
-                for s in range(int(a.data)):
-                    if not self.is_running: break
-                    self.safe_status_update(f"Wait: {int(a.data)-s}s remaining")
-                    self.update()
-                    time.sleep(1)
-                
-            # --- SCRIPT ACTION ---
+                self._run_wait_action(a)
             elif a.type == "Script":
-                script_name = os.path.basename(a.data)
-                self.safe_status_update(f"Running Script: {script_name}...")
-                self.update()
-                
-                # Execute via our verified subprocess logic
-                success = audio_engine.run_external_script(a.data)
-                
-                if success:
-                    self.safe_status_update(f"SUCCESS: {script_name} finished")
-                else:
-                    self.safe_status_update(f"ERROR: {script_name} failed")
-                
-                # Brief pause so the user can read the success/fail message
-                time.sleep(2)
-        
+                self._run_script_action(a)
+
         # --- ROUTINE COMPLETE ---
         self.is_running = False
         self.safe_status_update("Ready")
-        
+
         # Reset UI Buttons
         self.after(0, lambda: self.play_btn.configure(state="normal"))
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
         self.after(0, lambda: self.skip_btn.configure(state="disabled"))
 
-        # 2. CLI AUTO-CLOSE LOGIC (From BOTTOMONE)
+        # CLI AUTO-CLOSE LOGIC
         if self.auto_close:
             print("CLI Routine complete. Auto-closing in 3 seconds...")
-            time.sleep(3) 
+            time.sleep(3)
             self.on_closing()
+
+    def _run_audio_action(self, action):
+        """Plays each audio item in the action, respecting repeat count and duration limit."""
+        for item in action.data:
+            if not self.is_running: break
+            repeat_count = item.get('repeat', 1)
+            duration_limit = int(item.get('duration', 0))  # 0 means play full file
+
+            for i in range(repeat_count):
+                if not self.is_running: break
+
+                full_path, display_name = audio_engine.get_next_filename(item)
+                if full_path:
+                    self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}")
+                    self.update()
+
+                    audio_engine.play_audio(full_path)
+                    start_time = time.time()
+
+                    while audio_engine.is_playing() and self.is_running:
+                        if duration_limit > 0:
+                            elapsed = time.time() - start_time
+                            if elapsed >= duration_limit:
+                                audio_engine.stop_audio()
+                                break
+                        time.sleep(0.1)
+
+    def _run_announcement_action(self, action):
+        """Generates and plays a TTS announcement."""
+        self.safe_status_update(f"Announcement: {action.data[:30]}...")
+        self.update()
+        audio_engine.speak(action.data)
+        while audio_engine.is_playing() and self.is_running:
+            time.sleep(0.1)
+
+    def _run_wait_action(self, action):
+        """Counts down for the specified number of seconds."""
+        for s in range(int(action.data)):
+            if not self.is_running: break
+            self.safe_status_update(f"Wait: {int(action.data)-s}s remaining")
+            self.update()
+            time.sleep(1)
+
+    def _run_script_action(self, action):
+        """Runs an external Python script via subprocess."""
+        script_name = os.path.basename(action.data)
+        self.safe_status_update(f"Running Script: {script_name}...")
+        self.update()
+
+        success = audio_engine.run_external_script(action.data)
+
+        if success:
+            self.safe_status_update(f"SUCCESS: {script_name} finished")
+        else:
+            self.safe_status_update(f"ERROR: {script_name} failed")
+
+        # Brief pause so the user can read the success/fail message
+        time.sleep(2)
 
 
     def safe_status_update(self, msg):
@@ -536,22 +533,18 @@ class RoutineApp(ctk.CTk):
                 self.safe_status_update(f"Wait updated to {v}s.")
 
         # 5. SCRIPT: Change the target Python file
-
         elif a.type == "Script":
-            script_name = os.path.basename(a.data)
-            self.safe_status_update(f"Running Script: {script_name}")
-            self.update() # Force refresh to show "Running..."
-    
-            # Capture the True/False result from the engine
-            success = audio_engine.run_external_script(a.data)
-                
-            if success:
-                self.safe_status_update(f"SUCCESS: {script_name} finished")
-            else:
-                self.safe_status_update(f"ERROR: {script_name} failed")
-                
-            # Sleep for 2 seconds so you actually have time to read the status
-            time.sleep(2)
+            f = filedialog.askopenfilename(
+                initialdir=os.path.dirname(a.data) if a.data else self.last_script_dir,
+                title="Select New Python Script",
+                filetypes=[("Python Files", "*.py")]
+            )
+            if f:
+                a.data = f
+                self.last_script_dir = os.path.dirname(f)
+                self.save_settings()
+                self.update_display()
+                self.safe_status_update(f"Script updated to {os.path.basename(f)}")
 
 
 
@@ -566,12 +559,8 @@ class RoutineApp(ctk.CTk):
         if 0 <= idx < len(self.actions):
             self.actions.pop(idx); self.selected_index.set(-1); self.update_display()
 
-    def toggle_wait(self, i): 
+    def toggle_wait(self, i):
         self.actions[i].wait_on_completion = not self.actions[i].wait_on_completion
-    
-    def stop_routine(self): 
-        self.is_running = False
-        pygame.mixer.music.stop()
 
     def run_thread(self): 
         """Pre-enables buttons on the main thread, then starts the routine."""
