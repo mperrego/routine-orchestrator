@@ -82,9 +82,10 @@ Setting Up Python Routines/
 - requirements.txt created with pinned versions
 
 ## Connected tools (MCP)
-- GitHub: connected — can commit, push, read issues, manage PRs
-- Google Drive: connected — can read and update Google Sheets tracker
-- Tracker URL: https://docs.google.com/spreadsheets/d/1N21-tsglu0OdgxXq7WD9kupJcSpg7kPC/edit
+- GitHub: connected
+- Google Drive: connected
+- Tracker: https://docs.google.com/spreadsheets/d/1jWYuZMoj-3VnyywgbnIzmzrvjAgyne8spazrEOl4TM8/edit
+
 
 ## MCP registration note
 - MCP servers must be registered in ~/.claude.json via claude mcp add
@@ -118,9 +119,9 @@ Setting Up Python Routines/
   happens again
 
 ### When building something new
-- Always enter Plan Mode first (EnterPlanMode) before writing any code
+- Ask before entering Plan Mode — do not auto-enter it
 - Confirm the plan before switching to implementation
 - Build one phase at a time, test before moving to the next
-- Never build Phase 4 without explicit instruction and a agreed plan
+- Never build Phase 4 without explicit instruction and an agreed plan
 
 ## Session notes — 2026-03-22

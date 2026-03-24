@@ -122,7 +122,9 @@ class RoutineApp(ctk.CTk):
 
         import sys # Add to imports
 
-        # ... inside RoutineApp.__init__ ...
+        # Pre-cache Cast devices in background so the editor opens instantly
+        threading.Thread(target=audio_engine.discover_cast_devices, daemon=True).start()
+
         # After all UI is built, check for CLI arguments
         if len(sys.argv) > 1:
             self.auto_close = True # <--- ADD THIS: Mark for automatic shutdown
@@ -214,9 +216,10 @@ class RoutineApp(ctk.CTk):
         self.safe_status_update("Skipping current item...") 
 
     def stop_routine(self):
-        """Stops the entire routine and the audio."""
+        """Stops the entire routine, audio, and any active Cast."""
         self.is_running = False
         audio_engine.stop_audio()
+        audio_engine.stop_cast()
         self.safe_status_update("Routine Stopped.")
 
 
@@ -258,38 +261,67 @@ class RoutineApp(ctk.CTk):
             self.on_closing()
 
     def _run_audio_action(self, action):
-        """Plays each audio item in the action, respecting repeat count and duration limit."""
+        """Plays each audio item via Cast or Bluetooth, with volume, repeat, and duration."""
         for item in action.data:
             if not self.is_running: break
             repeat_count = item.get('repeat', 1)
-            duration_limit = int(item.get('duration', 0))  # 0 means play full file
+            duration_limit = int(item.get('duration', 0))
+            device = item.get('device', None)
+            volume = int(item.get('volume', 0))
+            is_cast = device and device.startswith("[Cast] ")
+            cast_name = device[7:] if is_cast else None  # Strip "[Cast] " prefix
 
             for i in range(repeat_count):
                 if not self.is_running: break
 
                 full_path, display_name = audio_engine.get_next_filename(item)
                 if full_path:
-                    self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}")
+                    device_label = f" → {device}" if device else ""
+                    vol_label = f" @ {volume}%" if volume > 0 else ""
+                    self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}{device_label}{vol_label}")
                     self.update()
 
-                    audio_engine.play_audio(full_path)
-                    start_time = time.time()
-
-                    while audio_engine.is_playing() and self.is_running:
-                        if duration_limit > 0:
-                            elapsed = time.time() - start_time
-                            if elapsed >= duration_limit:
+                    if is_cast:
+                        # WiFi Cast playback (volume set on same connection)
+                        success = audio_engine.play_audio_cast(full_path, cast_name, volume_percent=volume)
+                        if success:
+                            start_time = time.time()
+                            while audio_engine.is_cast_playing() and self.is_running:
+                                if duration_limit > 0 and (time.time() - start_time) >= duration_limit:
+                                    audio_engine.stop_cast()
+                                    break
+                                time.sleep(0.5)
+                            # Only stop between files if there are more to play
+                            audio_engine.stop_cast()
+                    else:
+                        # Bluetooth / system device playback via pygame
+                        audio_engine.play_audio(full_path, device=device)
+                        start_time = time.time()
+                        while audio_engine.is_playing() and self.is_running:
+                            if duration_limit > 0 and (time.time() - start_time) >= duration_limit:
                                 audio_engine.stop_audio()
                                 break
-                        time.sleep(0.1)
+                            time.sleep(0.1)
+
+        # Restore default output device after this audio action completes
+        audio_engine.reset_to_default_device()
 
     def _run_announcement_action(self, action):
-        """Generates and plays a TTS announcement."""
-        self.safe_status_update(f"Announcement: {action.data[:30]}...")
+        """Generates and plays a TTS announcement on the specified device."""
+        # Handle both old format (string) and new format (dict)
+        if isinstance(action.data, str):
+            text, device, volume = action.data, None, 0
+        else:
+            text = action.data.get("text", "")
+            device = action.data.get("device", None)
+            volume = int(action.data.get("volume", 0))
+
+        device_label = f" → {device}" if device else ""
+        self.safe_status_update(f"Announcement: {text[:30]}...{device_label}")
         self.update()
-        audio_engine.speak(action.data)
-        while audio_engine.is_playing() and self.is_running:
-            time.sleep(0.1)
+        audio_engine.speak(text, device=device, volume=volume)
+        # speak() blocks until done, so just reset device after
+        audio_engine.reset_to_default_device()
 
     def _run_wait_action(self, action):
         """Counts down for the specified number of seconds."""
@@ -420,9 +452,12 @@ class RoutineApp(ctk.CTk):
             # Ask the user what they want the AI to say
             text = ctk.CTkInputDialog(text="Enter the announcement text:", title="New Announcement").get_input()
             if text:
-                new_action = Action("Announcement", text, True)
+                new_action = Action("Announcement", {"text": text, "device": None, "volume": 0}, True)
                 self.actions.append(new_action)
                 self.update_display()
+                # Open the announcement editor to pick speaker
+                self.selected_index.set(len(self.actions) - 1)
+                self.edit_action()
 
 
         # 4. SCRIPT ACTION
@@ -456,6 +491,15 @@ class RoutineApp(ctk.CTk):
             label_text = f"{i+1}. {a.type.upper()}: {a.data}"
             if a.type == "Audio":
                 label_text = f"{i+1}. PLAY AUDIO FILES"
+            elif a.type == "Announcement":
+                if isinstance(a.data, dict):
+                    ann_text = a.data.get("text", "")[:40]
+                    ann_device = a.data.get("device", None)
+                    label_text = f"{i+1}. ANNOUNCE: {ann_text}"
+                    if ann_device:
+                        label_text += f" → {ann_device}"
+                else:
+                    label_text = f"{i+1}. ANNOUNCE: {a.data[:40]}"
             elif a.type == "Wait":
                 label_text = f"{i+1}. WAIT: {a.data} Seconds"
             elif a.type == "Script":
@@ -479,11 +523,19 @@ class RoutineApp(ctk.CTk):
                     # Create the base description
                     txt = f"↳ {name} ({item['mode']}) x{item['repeat']}"
                     
-                    # Add the duration logic you requested
+                    # Add duration, speaker, and volume info
                     duration = item.get('duration', 0)
                     if duration > 0:
                         txt += f" | playing for {duration} seconds"
-                    
+
+                    device = item.get('device', None)
+                    if device:
+                        txt += f" | {device}"
+
+                    volume = item.get('volume', 0)
+                    if volume > 0:
+                        txt += f" | Vol: {volume}%"
+
                     ctk.CTkLabel(sub_list, text=txt, font=("Arial", 11, "italic"), text_color="#3a7ebf").pack(anchor="w")
 
             if i > 0:
@@ -510,17 +562,9 @@ class RoutineApp(ctk.CTk):
             # Assuming 'editors' is imported at the top of your script
             editors.AudioSequenceEditor(self, a)
 
-        # 3. ANNOUNCEMENT: Open a text input dialog
+        # 3. ANNOUNCEMENT: Open editor with text + speaker selection
         elif a.type == "Announcement":
-            # initial_value isn't a direct argument for CTkInputDialog, 
-            # so we just show the dialog to get the new string.
-            dialog = ctk.CTkInputDialog(text="Edit announcement text:", title="Edit Announcement")
-            new_text = dialog.get_input()
-            
-            if new_text is not None and new_text.strip() != "":
-                a.data = new_text
-                self.update_display()
-                self.safe_status_update("Announcement updated.")
+            editors.AnnouncementEditor(self, a)
 
         # 4. WAIT: Edit seconds using a dialog
         elif a.type == "Wait":
@@ -581,33 +625,32 @@ class RoutineApp(ctk.CTk):
 
 
     def load_settings(self):
-        """Load settings including recent files."""
-        defaults = {
-            "last_audio_dir": self.base_dir,
-            "last_script_dir": self.base_dir,
-            "recent_files": []
-        }
+        """Load settings including recent files and saved speakers."""
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, 'r') as f:
                     settings = json.load(f)
                     self.last_audio_dir = settings.get("last_audio_dir", self.base_dir)
                     self.last_script_dir = settings.get("last_script_dir", self.base_dir)
-                    self.recent_files = settings.get("recent_files", [])[:5] # Keep last 5
+                    self.recent_files = settings.get("recent_files", [])[:5]
+                    self.saved_speakers = settings.get("saved_speakers", [])
             except Exception:
                 self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
                 self.recent_files = []
+                self.saved_speakers = []
         else:
             self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
             self.recent_files = []
+            self.saved_speakers = []
 
 
     def save_settings(self):
-        """Save settings including recent files."""
+        """Save settings including recent files and saved speakers."""
         settings = {
             "last_audio_dir": self.last_audio_dir,
             "last_script_dir": self.last_script_dir,
-            "recent_files": self.recent_files
+            "recent_files": self.recent_files,
+            "saved_speakers": self.saved_speakers
         }
         with open(self.settings_file, 'w') as f:
             json.dump(settings, f, indent=4)

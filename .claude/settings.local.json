@@ -1,11 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m pip show customtkinter pygame pydub gtts pyttsx3)",
-      "Bash(python -m venv venv)",
-      "Bash(venv/Scripts/python.exe -m pip install -r requirements.txt)",
-      "Bash(venv/Scripts/python.exe -m pip list)",
-      "Bash(venv/Scripts/python.exe -m pip freeze)"
-    ]
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(python:*)",
+      "Bash(pip:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(cd:*)",
+      "Bash(cat:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(venv/Scripts/pip:*)",
+      "mcp__github__*",
+      "mcp__gdrive__*",
+      "Skill(update-config)",
+      "WebSearch",
+      "Bash(ipconfig)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
