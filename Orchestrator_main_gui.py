@@ -2,9 +2,9 @@
 Author: Michael
 Project: Routine Orchestrator
 File: Orchestrator_main_gui.py
-Description: Added SKIP button and renamed folder addition button.
-Version: 8.5
-Date: 2026-03-14
+Description: UI cleanup — dirty tracking, single editor limit, New Routine button.
+Version: 9.2
+Date: 2026-03-25
 """
 
 import customtkinter as ctk
@@ -48,20 +48,27 @@ class RoutineApp(ctk.CTk):
         # 3. INITIALIZE TRACKERS (Load from file if possible, otherwise use base_dir)
         self.load_settings() 
 
+        # SIGNAL FILES for CLI remote stop
+        self.pid_file = os.path.join(self.base_dir, "orchestrator.pid")
+        self.stop_signal_file = os.path.join(self.base_dir, "orchestrator.stop")
+
         # 4. APP STATE
         self.actions = []
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
-        self.auto_close = False  
-        
+        self.auto_close = False
+        self.has_unsaved_changes = False
+        self.current_routine_path = None
+        self._audio_editor = None
+
         # Initialize the menu bar
         self.setup_menu()
 
-        # 5. UI COMPONENTS - TOP MENU (Save/Load)
-        f_io = ctk.CTkFrame(self)
-        f_io.pack(fill="x", padx=20, pady=(10, 0))
-        ctk.CTkButton(f_io, text="Save Routine", command=self.save_routine).pack(side="left", padx=10, pady=5)
-        ctk.CTkButton(f_io, text="Load Routine", command=self.load_routine).pack(side="left", padx=10, pady=5)
+        # 5. UI COMPONENTS - NEW ROUTINE BUTTON
+        f_top = ctk.CTkFrame(self)
+        f_top.pack(fill="x", padx=20, pady=(10, 0))
+        ctk.CTkButton(f_top, text="New Routine", fg_color="#2b6cb0",
+                       command=self.clear_routine).pack(side="left", padx=10, pady=5)
 
         # 6. UI COMPONENTS - MAIN LIST AREA
         self.list_frame = ctk.CTkScrollableFrame(self)
@@ -79,6 +86,7 @@ class RoutineApp(ctk.CTk):
         ctk.CTkButton(f_create, text="+ Wait", width=100, command=lambda: self.add_action("Wait")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Script", width=100, command=lambda: self.add_action("Script")).pack(side="left", padx=5)
         ctk.CTkButton(f_create, text="+ Announcement", width=120, command=lambda: self.add_action("Announcement")).pack(side="left", padx=5)
+        ctk.CTkButton(f_create, text="+ Routine", width=100, fg_color="#6a4c93", command=lambda: self.add_action("Routine")).pack(side="left", padx=5)
 
         # 8. UI COMPONENTS - EDIT ACTIONS GROUP (Management)
         f_edit_container = ctk.CTkFrame(self)
@@ -120,17 +128,14 @@ class RoutineApp(ctk.CTk):
         # Window Close Protocol
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        import sys # Add to imports
-
         # Pre-cache Cast devices in background so the editor opens instantly
         threading.Thread(target=audio_engine.discover_cast_devices, daemon=True).start()
 
-        # After all UI is built, check for CLI arguments
-        if len(sys.argv) > 1:
-            self.auto_close = True # <--- ADD THIS: Mark for automatic shutdown
-            # We use after() to wait 100ms for the GUI to fully render 
-            # before starting the heavy lifting
-            self.after(100, lambda: self.load_and_run_from_cli(sys.argv[1]))
+        # After all UI is built, check for CLI arguments (skip --stop, handled in __main__)
+        cli_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+        if cli_args:
+            self.auto_close = True
+            self.after(100, lambda: self.load_and_run_from_cli(cli_args[0]))
 
 
 
@@ -169,11 +174,24 @@ class RoutineApp(ctk.CTk):
         file_menu.add_command(label="Save Routine", command=self.save_routine)
         file_menu.add_command(label="Load Routine", command=self.load_routine)
         
+        # Recent Files submenu
+        recent_menu = tk.Menu(file_menu, tearoff=0)
+        if hasattr(self, 'recent_files') and self.recent_files:
+            for path in self.recent_files:
+                name = os.path.basename(path)
+                recent_menu.add_command(
+                    label=name,
+                    command=lambda p=path: self.load_specific_routine(p)
+                )
+        else:
+            recent_menu.add_command(label="(No recent files)", state="disabled")
+        file_menu.add_cascade(label="Open Recent", menu=recent_menu)
+
         file_menu.add_separator()
-        
-        # The new CLI utility
+
+        # The CLI utility
         file_menu.add_command(
-            label="Copy CLI Command to Clipboard", 
+            label="Copy CLI Command to Clipboard",
             command=self.copy_cli_command
         )
         
@@ -196,12 +214,31 @@ class RoutineApp(ctk.CTk):
             command=self.reset_settings
         )
 
+    def _mark_dirty(self):
+        """Flag that the routine has unsaved changes."""
+        self.has_unsaved_changes = True
+
+    def _prompt_save_if_dirty(self):
+        """If there are unsaved changes, ask to save. Returns False if user cancels."""
+        if not self.has_unsaved_changes or not self.actions:
+            return True
+        result = messagebox.askyesnocancel("Unsaved Changes",
+                                            "You have unsaved changes. Save before continuing?")
+        if result is None:  # Cancel
+            return False
+        if result:  # Yes
+            self.save_routine()
+        return True
+
     def clear_routine(self):
-        """Wipes the current actions list to start fresh."""
-        if messagebox.askyesno("Confirm", "Clear all actions and start a new routine?"):
-            self.actions = []
-            self.update_display()
-            self.safe_status_update("New routine started.")
+        """Prompts to save if dirty, then wipes the current actions list."""
+        if not self._prompt_save_if_dirty():
+            return
+        self.actions = []
+        self.has_unsaved_changes = False
+        self.current_routine_path = None
+        self.update_display()
+        self.safe_status_update("New routine started.")
 
     def reset_settings(self):
         """Resets the directory trackers to the base directory."""
@@ -211,8 +248,9 @@ class RoutineApp(ctk.CTk):
         messagebox.showinfo("Reset", "Directory trackers have been reset to the program folder.")
         
     def skip_item(self):
-        """Interrupts current audio. The loop will then move to the next item."""
+        """Interrupts current audio (pygame and Cast). The loop will then move to the next item."""
         audio_engine.stop_audio()
+        audio_engine.stop_cast()
         self.safe_status_update("Skipping current item...") 
 
     def stop_routine(self):
@@ -222,10 +260,41 @@ class RoutineApp(ctk.CTk):
         audio_engine.stop_cast()
         self.safe_status_update("Routine Stopped.")
 
+    # --- Signal file methods for CLI remote stop ---
+
+    def _write_pid_file(self):
+        """Write current process ID so --stop knows we're running."""
+        try:
+            with open(self.pid_file, 'w') as f:
+                f.write(str(os.getpid()))
+        except Exception as e:
+            print(f"PID file warning: {e}")
+
+    def _cleanup_signal_files(self):
+        """Remove PID and stop signal files on exit."""
+        for path in (self.pid_file, self.stop_signal_file):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+
+    def _should_stop(self):
+        """Check both the internal flag and the external stop signal file."""
+        if os.path.exists(self.stop_signal_file):
+            print("Stop signal detected from external command.")
+            self.is_running = False
+            audio_engine.stop_audio()
+            audio_engine.stop_cast()
+        return not self.is_running
 
     def run_routine(self):
         """Sequentially executes actions and handles the Skip/Stop states."""
         self.is_running = True
+        self._write_pid_file()
+        # Clear any stale stop signal from a previous session
+        if os.path.exists(self.stop_signal_file):
+            os.remove(self.stop_signal_file)
 
         # UI State Management - Disable Play, Enable Stop/Skip
         self.after(0, lambda: self.play_btn.configure(state="disabled"))
@@ -233,7 +302,7 @@ class RoutineApp(ctk.CTk):
         self.after(0, lambda: self.skip_btn.configure(state="normal"))
 
         for a in self.actions:
-            if not self.is_running:
+            if self._should_stop():
                 break
 
             if a.type == "Audio":
@@ -244,9 +313,12 @@ class RoutineApp(ctk.CTk):
                 self._run_wait_action(a)
             elif a.type == "Script":
                 self._run_script_action(a)
+            elif a.type == "Routine":
+                self._run_routine_action(a)
 
         # --- ROUTINE COMPLETE ---
         self.is_running = False
+        self._cleanup_signal_files()
         self.safe_status_update("Ready")
 
         # Reset UI Buttons
@@ -254,16 +326,15 @@ class RoutineApp(ctk.CTk):
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
         self.after(0, lambda: self.skip_btn.configure(state="disabled"))
 
-        # CLI AUTO-CLOSE LOGIC
+        # CLI AUTO-CLOSE LOGIC — schedule on main thread to avoid tkinter crashes
         if self.auto_close:
             print("CLI Routine complete. Auto-closing in 3 seconds...")
-            time.sleep(3)
-            self.on_closing()
+            self.after(3000, self.on_closing)
 
     def _run_audio_action(self, action):
         """Plays each audio item via Cast or Bluetooth, with volume, repeat, and duration."""
         for item in action.data:
-            if not self.is_running: break
+            if self._should_stop(): break
             repeat_count = item.get('repeat', 1)
             duration_limit = int(item.get('duration', 0))
             device = item.get('device', None)
@@ -272,21 +343,20 @@ class RoutineApp(ctk.CTk):
             cast_name = device[7:] if is_cast else None  # Strip "[Cast] " prefix
 
             for i in range(repeat_count):
-                if not self.is_running: break
+                if self._should_stop(): break
 
                 full_path, display_name = audio_engine.get_next_filename(item)
                 if full_path:
                     device_label = f" → {device}" if device else ""
                     vol_label = f" @ {volume}%" if volume > 0 else ""
                     self.safe_status_update(f"({i+1}/{repeat_count}) Playing: {display_name}{device_label}{vol_label}")
-                    self.update()
 
                     if is_cast:
                         # WiFi Cast playback (volume set on same connection)
                         success = audio_engine.play_audio_cast(full_path, cast_name, volume_percent=volume)
                         if success:
                             start_time = time.time()
-                            while audio_engine.is_cast_playing() and self.is_running:
+                            while audio_engine.is_cast_playing() and not self._should_stop():
                                 if duration_limit > 0 and (time.time() - start_time) >= duration_limit:
                                     audio_engine.stop_cast()
                                     break
@@ -297,7 +367,7 @@ class RoutineApp(ctk.CTk):
                         # Bluetooth / system device playback via pygame
                         audio_engine.play_audio(full_path, device=device)
                         start_time = time.time()
-                        while audio_engine.is_playing() and self.is_running:
+                        while audio_engine.is_playing() and not self._should_stop():
                             if duration_limit > 0 and (time.time() - start_time) >= duration_limit:
                                 audio_engine.stop_audio()
                                 break
@@ -318,7 +388,6 @@ class RoutineApp(ctk.CTk):
 
         device_label = f" → {device}" if device else ""
         self.safe_status_update(f"Announcement: {text[:30]}...{device_label}")
-        self.update()
         audio_engine.speak(text, device=device, volume=volume)
         # speak() blocks until done, so just reset device after
         audio_engine.reset_to_default_device()
@@ -326,16 +395,14 @@ class RoutineApp(ctk.CTk):
     def _run_wait_action(self, action):
         """Counts down for the specified number of seconds."""
         for s in range(int(action.data)):
-            if not self.is_running: break
+            if self._should_stop(): break
             self.safe_status_update(f"Wait: {int(action.data)-s}s remaining")
-            self.update()
             time.sleep(1)
 
     def _run_script_action(self, action):
         """Runs an external Python script via subprocess."""
         script_name = os.path.basename(action.data)
         self.safe_status_update(f"Running Script: {script_name}...")
-        self.update()
 
         success = audio_engine.run_external_script(action.data)
 
@@ -347,15 +414,68 @@ class RoutineApp(ctk.CTk):
         # Brief pause so the user can read the success/fail message
         time.sleep(2)
 
+    def _run_routine_action(self, action, _depth=0):
+        """Loads and executes a nested routine from a saved JSON file."""
+        if _depth >= 10:
+            self.safe_status_update("ERROR: Routine nesting too deep (max 10)")
+            time.sleep(2)
+            return
+
+        routine_path = action.data
+        routine_name = os.path.splitext(os.path.basename(routine_path))[0]
+
+        if not os.path.exists(routine_path):
+            self.safe_status_update(f"ERROR: Routine '{routine_name}' not found")
+            time.sleep(2)
+            return
+
+        try:
+            with open(routine_path, 'r') as f:
+                data = json.load(f)
+            nested_actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
+        except Exception as e:
+            self.safe_status_update(f"ERROR loading routine: {e}")
+            time.sleep(2)
+            return
+
+        self.safe_status_update(f"Running Routine: {routine_name}")
+
+        for nested in nested_actions:
+            if self._should_stop():
+                break
+
+            if nested.type == "Audio":
+                self._run_audio_action(nested)
+            elif nested.type == "Announcement":
+                self._run_announcement_action(nested)
+            elif nested.type == "Wait":
+                self._run_wait_action(nested)
+            elif nested.type == "Script":
+                self._run_script_action(nested)
+            elif nested.type == "Routine":
+                self._run_routine_action(nested, _depth=_depth + 1)
+
+        if self.is_running:
+            self.safe_status_update(f"Routine '{routine_name}' complete")
 
     def safe_status_update(self, msg):
         """Ensures the status label is updated safely across threads."""
-        try: self.status.configure(text=msg)
-        except: pass
+        try:
+            self.after(0, lambda m=msg: self.status.configure(text=m))
+        except Exception:
+            pass
 
     def on_closing(self):
         """Safely shuts down the audio engine and closes the app."""
+        if not self.auto_close and self.has_unsaved_changes and self.actions:
+            result = messagebox.askyesnocancel("Unsaved Changes",
+                                                "You have unsaved changes. Save before exiting?")
+            if result is None:  # Cancel — don't close
+                return
+            if result:  # Yes — save first
+                self.save_routine()
         self.is_running = False
+        self._cleanup_signal_files()
         pygame.mixer.quit(); self.destroy(); sys.exit()
 
 
@@ -385,10 +505,11 @@ class RoutineApp(ctk.CTk):
                 with open(filename, 'w') as f:
                     json.dump(data, f, indent=4)
                 
-                # Update our directory tracker and Recents list
-                self.last_used_dir = os.path.dirname(filename)
+                # Update Recents list
                 self.update_recent_files(filename)
                 
+                self.has_unsaved_changes = False
+                self.current_routine_path = filename
                 self.safe_status_update(f"Saved: {os.path.basename(filename)}")
                 messagebox.showinfo("Success", "Routine saved successfully.")
             except Exception as e:
@@ -416,11 +537,12 @@ class RoutineApp(ctk.CTk):
                 
                 # Update the GUI display and directory tracker
                 self.update_display()
-                self.last_used_dir = os.path.dirname(filename)
-                
+
                 # Add this file to the 'Open Recent' menu
                 self.update_recent_files(filename)
                 
+                self.has_unsaved_changes = False
+                self.current_routine_path = filename
                 self.safe_status_update(f"Loaded: {os.path.basename(filename)}")
             except Exception as e:
                 messagebox.showerror("Load Error", f"An error occurred while loading: {e}")
@@ -430,57 +552,66 @@ class RoutineApp(ctk.CTk):
         """Creates a new Action object and adds it to the routine."""
         # 1. AUDIO ACTION
         if atype == "Audio":
-            # Initialize with an empty list for audio data and 'wait' set to True
             new_action = Action("Audio", [], True)
             self.actions.append(new_action)
             self.update_display()
-            
+            self._mark_dirty()
+            self.safe_status_update(f"Added {atype} action.")
+
             # Automatically open the editor for the newly created audio action
             self.selected_index.set(len(self.actions) - 1)
             self.edit_action()
 
         # 2. WAIT ACTION
         elif atype == "Wait":
-            # Default to a 5-second wait if not specified
             new_action = Action("Wait", 5, True)
             self.actions.append(new_action)
             self.update_display()
+            self._mark_dirty()
+            self.safe_status_update(f"Added {atype} action.")
 
-        # 3. SCRIPT ACTION
-
+        # 3. ANNOUNCEMENT ACTION
         elif atype == "Announcement":
-            # Ask the user what they want the AI to say
             text = ctk.CTkInputDialog(text="Enter the announcement text:", title="New Announcement").get_input()
             if text:
                 new_action = Action("Announcement", {"text": text, "device": None, "volume": 0}, True)
                 self.actions.append(new_action)
                 self.update_display()
+                self._mark_dirty()
+                self.safe_status_update(f"Added {atype} action.")
                 # Open the announcement editor to pick speaker
                 self.selected_index.set(len(self.actions) - 1)
                 self.edit_action()
 
-
         # 4. SCRIPT ACTION
         elif atype == "Script":
-            # Open file dialog using the last used script directory
             f = filedialog.askopenfilename(
                 initialdir=self.last_script_dir,
                 title="Select Python Script",
                 filetypes=[("Python Files", "*.py")]
             )
-            
             if f:
-                # Update the directory tracker for scripts
                 self.last_script_dir = os.path.dirname(f)
                 self.save_settings()
-                
-                # Add the script action with 'wait' set to True
                 new_action = Action("Script", f, True)
                 self.actions.append(new_action)
                 self.update_display()
+                self._mark_dirty()
+                self.safe_status_update(f"Added {atype} action.")
 
-        self.safe_status_update(f"Added {atype} action.")
-    
+        # 5. ROUTINE ACTION (embed a saved routine inside this one)
+        elif atype == "Routine":
+            f = filedialog.askopenfilename(
+                initialdir=self.routines_dir,
+                title="Select Routine to Embed",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if f:
+                new_action = Action("Routine", f, True)
+                self.actions.append(new_action)
+                self.update_display()
+                self._mark_dirty()
+                self.safe_status_update(f"Added {atype} action.")
 
     def update_display(self):
         for w in self.list_frame.winfo_children(): w.destroy()
@@ -504,6 +635,9 @@ class RoutineApp(ctk.CTk):
                 label_text = f"{i+1}. WAIT: {a.data} Seconds"
             elif a.type == "Script":
                 label_text = f"{i+1}. SCRIPT: {os.path.basename(a.data)}"
+            elif a.type == "Routine":
+                routine_name = os.path.splitext(os.path.basename(a.data))[0]
+                label_text = f"{i+1}. ROUTINE: {routine_name}"
 
             rb = ctk.CTkRadioButton(row_frame, text=label_text, variable=self.selected_index, value=i, font=("Arial", 12, "bold"))
             rb.pack(side="left", padx=10, pady=5)
@@ -557,10 +691,12 @@ class RoutineApp(ctk.CTk):
             
         a = self.actions[idx]
 
-        # 2. AUDIO: Open the specialized sequence editor from editors.py
+        # 2. AUDIO: Open the specialized sequence editor (limit to one instance)
         if a.type == "Audio":
-            # Assuming 'editors' is imported at the top of your script
-            editors.AudioSequenceEditor(self, a)
+            if self._audio_editor and self._audio_editor.winfo_exists():
+                self._audio_editor.focus()
+                return
+            self._audio_editor = editors.AudioSequenceEditor(self, a)
 
         # 3. ANNOUNCEMENT: Open editor with text + speaker selection
         elif a.type == "Announcement":
@@ -590,21 +726,35 @@ class RoutineApp(ctk.CTk):
                 self.update_display()
                 self.safe_status_update(f"Script updated to {os.path.basename(f)}")
 
-
+        # 6. ROUTINE: Change which routine is embedded
+        elif a.type == "Routine":
+            f = filedialog.askopenfilename(
+                initialdir=self.routines_dir,
+                title="Select Different Routine",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if f:
+                a.data = f
+                self.update_display()
+                routine_name = os.path.splitext(os.path.basename(f))[0]
+                self.safe_status_update(f"Routine updated to {routine_name}")
 
     def move_action(self, d):
         idx = self.selected_index.get()
         if 0 <= idx + d < len(self.actions):
             self.actions[idx], self.actions[idx+d] = self.actions[idx+d], self.actions[idx]
             self.selected_index.set(idx+d); self.update_display()
+            self._mark_dirty()
 
     def remove_action(self):
         idx = self.selected_index.get()
         if 0 <= idx < len(self.actions):
             self.actions.pop(idx); self.selected_index.set(-1); self.update_display()
+            self._mark_dirty()
 
     def toggle_wait(self, i):
         self.actions[i].wait_on_completion = not self.actions[i].wait_on_completion
+        self._mark_dirty()
 
     def run_thread(self): 
         """Pre-enables buttons on the main thread, then starts the routine."""
@@ -615,14 +765,6 @@ class RoutineApp(ctk.CTk):
             self.skip_btn.configure(state="normal")
             
             threading.Thread(target=self.run_routine, daemon=True).start()
-
-    def reset_ui_after_run(self):
-        """Restores the button states when the routine ends."""
-        self.play_btn.configure(state="normal")
-        self.stop_btn.configure(state="disabled")
-        self.skip_btn.configure(state="disabled")
-        self.safe_status_update("Ready")
-
 
     def load_settings(self):
         """Load settings including recent files and saved speakers."""
@@ -725,6 +867,8 @@ class RoutineApp(ctk.CTk):
                 # Move this file to the top of the recents list
                 self.update_recent_files(path)
                 
+                self.has_unsaved_changes = False
+                self.current_routine_path = path
                 self.safe_status_update(f"Loaded: {os.path.basename(path)}")
             except Exception as e:
                 messagebox.showerror("Load Error", f"Could not load routine: {e}")
@@ -738,4 +882,18 @@ class RoutineApp(ctk.CTk):
 
 
 if __name__ == "__main__":
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pid_file = os.path.join(base_dir, "orchestrator.pid")
+    stop_file = os.path.join(base_dir, "orchestrator.stop")
+
+    # Handle --stop before launching the GUI (no window opens)
+    if "--stop" in sys.argv:
+        if os.path.exists(pid_file):
+            with open(stop_file, 'w') as f:
+                f.write("stop")
+            print("Stop signal sent to running Orchestrator.")
+        else:
+            print("No running Orchestrator found (no PID file).")
+        sys.exit(0)
+
     RoutineApp().mainloop()

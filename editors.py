@@ -8,7 +8,7 @@ Date: 2026-03-23
 """
 
 import customtkinter as ctk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import os
 import tkinter as tk
 import audio_engine
@@ -55,10 +55,16 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                       text="+ Add Playing Multiple Files", 
                       command=self.add_folder).pack(side="left", padx=5)
         
+        # Exit without saving
+        ctk.CTkButton(ctrl,
+                      text="Exit (No Save)",
+                      fg_color="#333333", width=100,
+                      command=self.exit_no_save).pack(side="right", padx=5)
+
         # Save & Close Button (Linked to our cleanup logic)
-        ctk.CTkButton(ctrl, 
-                      text="Save & Close", 
-                      fg_color="green", 
+        ctk.CTkButton(ctrl,
+                      text="Save & Close",
+                      fg_color="green",
                       command=self.on_closing).pack(side="right", padx=5)
         
         # 6. INITIAL POPULATE
@@ -79,19 +85,29 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.configure(menu=menu_bar)
 
     def clear_all_items(self):
-        if tk.messagebox.askyesno("Clear List", "Remove all audio items from this sequence?"):
+        if messagebox.askyesno("Clear List", "Remove all audio items from this sequence?"):
             self.action.data = []
             self.update_list()
+
+    def _safe_int(self, value, default=0, minimum=0):
+        """Converts a string to int, returning default if invalid."""
+        try:
+            result = int(value)
+            return max(result, minimum)
+        except (ValueError, TypeError):
+            return default
 
     def sync_data(self):
         """Updates the underlying action data with values from the entry boxes."""
         for i in range(len(self.action.data)):
             try:
-                # Sync Repeat Count
-                self.action.data[i]['repeat'] = int(self.repeat_entries[i].get())
+                # Sync Repeat Count (minimum 1)
+                self.action.data[i]['repeat'] = self._safe_int(
+                    self.repeat_entries[i].get(), default=1, minimum=1)
 
-                # Sync Duration
-                self.action.data[i]['duration'] = int(self.duration_entries[i].get())
+                # Sync Duration (0 = full playback)
+                self.action.data[i]['duration'] = self._safe_int(
+                    self.duration_entries[i].get(), default=0)
 
                 # Sync Output Device (speaker)
                 device = self.device_vars[i].get()
@@ -105,8 +121,9 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                         self.parent_app.save_settings()
 
                 # Sync Volume (0 = don't change)
-                self.action.data[i]['volume'] = int(self.volume_entries[i].get())
-            except (ValueError, IndexError):
+                self.action.data[i]['volume'] = self._safe_int(
+                    self.volume_entries[i].get(), default=0)
+            except IndexError:
                 pass
 
     def close_and_refresh(self):
@@ -227,7 +244,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                 try:
                     files = sorted([f for f in os.listdir(item['path']) if f.lower().endswith(valid_exts)])
                     file_text = "\n".join(files) if files else "Empty Folder"
-                except:
+                except Exception:
                     file_text = "Error reading folder."
                 
                 txt = ctk.CTkTextbox(row, height=80, font=("Consolas", 11))
@@ -245,18 +262,30 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.action.data.pop(idx)
         self.update_list()
 
-    def on_closing(self):
-        """Final sync and cleanup before closing the window."""
-        self.sync_data() # Ensure the action's data list is up to date
-        
-        # Logic: If the user didn't add any files or folders, delete the action
+    def exit_no_save(self):
+        """Close the editor without saving. Remove empty actions."""
         if not self.action.data:
             if self.action in self.parent_app.actions:
                 self.parent_app.actions.remove(self.action)
                 self.parent_app.safe_status_update("Empty audio action discarded.")
-        
-        # Refresh the main GUI to show the updated list
         self.parent_app.update_display()
+        self.parent_app._audio_editor = None
+        self.destroy()
+
+    def on_closing(self):
+        """Final sync and cleanup before closing the window."""
+        self.sync_data()
+
+        # If the user didn't add any files or folders, delete the action
+        if not self.action.data:
+            if self.action in self.parent_app.actions:
+                self.parent_app.actions.remove(self.action)
+                self.parent_app.safe_status_update("Empty audio action discarded.")
+        else:
+            self.parent_app._mark_dirty()
+
+        self.parent_app.update_display()
+        self.parent_app._audio_editor = None
         self.destroy()
 
 
@@ -330,5 +359,6 @@ class AnnouncementEditor(ctk.CTkToplevel):
             self.parent_app.saved_speakers.append(device)
             self.parent_app.save_settings()
 
+        self.parent_app._mark_dirty()
         self.parent_app.update_display()
         self.destroy()

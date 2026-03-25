@@ -14,6 +14,7 @@ import socket
 import threading
 import http.server
 import functools
+from urllib.parse import quote
 import pygame
 from pydub import AudioSegment
 from gtts import gTTS
@@ -31,6 +32,7 @@ _cast_cache = None
 # Local HTTP server for serving audio files to Cast devices
 _http_server = None
 _http_thread = None
+_http_port = 8089
 
 # Active Cast connection for stopping/checking playback
 _active_cast = None
@@ -68,14 +70,13 @@ def get_next_filename(item_data):
                 try:
                     with open(tracker_path, 'r', encoding='utf-8') as f:
                         last_played = f.read().strip()
-                except:
+                except Exception:
                     pass
-            
+
             idx = (files.index(last_played) + 1) % len(files) if last_played in files else 0
             chosen_file = files[idx]
         else:
             # Random Mode
-            import random
             chosen_file = random.choice(files)
         
     # --- 3. UNIVERSAL BOOKMARK UPDATE ---
@@ -170,21 +171,23 @@ def _get_local_ip():
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except:
+    except Exception:
         return "127.0.0.1"
 
-def _start_http_server(directory, port=8089):
+def _start_http_server(directory):
     """Starts a local HTTP server to serve audio files to Cast devices."""
-    global _http_server, _http_thread
+    global _http_server, _http_thread, _http_port
 
     # Stop existing server if running
     _stop_http_server()
 
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
-    _http_server = http.server.HTTPServer(("", port), handler)
+    # Use port 0 to let the OS pick a free port
+    _http_server = http.server.HTTPServer(("", 0), handler)
+    _http_port = _http_server.server_address[1]
     _http_thread = threading.Thread(target=_http_server.serve_forever, daemon=True)
     _http_thread.start()
-    print(f"HTTP server started on port {port} serving {directory}")
+    print(f"HTTP server started on port {_http_port} serving {directory}")
 
 def _stop_http_server():
     """Stops the local HTTP server."""
@@ -215,9 +218,7 @@ def play_audio_cast(file_path, cast_name, volume_percent=0):
 
         # Build the URL the Cast device will fetch
         local_ip = _get_local_ip()
-        # URL-encode spaces and special chars in filename
-        from urllib.parse import quote
-        url = f"http://{local_ip}:8089/{quote(file_name)}"
+        url = f"http://{local_ip}:{_http_port}/{quote(file_name)}"
 
         # Connect to the Cast device
         casts, browser = pychromecast.get_listed_chromecasts(friendly_names=[cast_name])
@@ -266,7 +267,7 @@ def stop_cast():
         if _active_browser:
             import pychromecast
             pychromecast.discovery.stop_discovery(_active_browser)
-    except:
+    except Exception:
         pass
     _active_cast = None
     _active_browser = None
@@ -280,7 +281,7 @@ def is_cast_playing():
             mc.update_status()
             state = mc.status.player_state
             return state in ("PLAYING", "BUFFERING", "UNKNOWN")
-    except:
+    except Exception:
         pass
     return False
 
@@ -308,7 +309,7 @@ def switch_output_device(device_name):
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
             _current_device = None
             print("Fell back to system default audio device")
-        except:
+        except Exception:
             pass
         return False
 
@@ -326,7 +327,8 @@ def play_audio(file_path, device=None):
         ext = file_path.lower()
         if not (ext.endswith('.mp3') or ext.endswith('.wav')):
             audio = AudioSegment.from_file(file_path)
-            temp_path = "temp_converted.mp3"
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            temp_path = os.path.join(base_dir, "temp_converted.mp3")
             audio.export(temp_path, format="mp3")
             file_path = temp_path
 
@@ -375,7 +377,7 @@ def speak(text, device=None, volume=0):
                 pygame.mixer.music.unload()
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-        except:
+        except Exception:
             pass
 
 def is_playing():
