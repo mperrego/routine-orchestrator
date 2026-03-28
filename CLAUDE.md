@@ -104,8 +104,10 @@ db_connector (status=promoted) is available for any future DB connections.
 save_json/load_json (status=stable) could replace hand-rolled JSON persistence.
 
 ## sync_core
-Pinned version: sync_core-v1.0.0
-Commit hash: 1a7026e97c957b5f214524f945438eed970ee814
+Pinned version: sync_core-v1.1.0
+Commit hash: 47d82a054fc87469ea9b3287a656c544b6a5e307
+New in v1.1.0: module_checker -- get_active_modules(), is_module_active(),
+               check_module_upgrades()
 Import path: set ECOSYSTEM_CORE_PATH env var to ecosystem-core folder
 Do NOT update this pin without testing -- always pin to a specific
 commit hash, never to "main" or "latest".
