@@ -81,6 +81,32 @@ Setting Up Python Routines/
 - Status bar: working — real-time progress display during routine execution
 - requirements.txt created with pinned versions
 
+
+---
+
+## Ecosystem Context
+This project is part of the mperrego ecosystem.
+Mothership repo: github.com/mperrego/ecosystem-core
+Global architecture context: see ecosystem-core/CLAUDE.md
+On every push to master, notify_mothership.yml dispatches a project-update
+event to ecosystem-core, which updates the global manifest and Master Sheet.
+
+## Database Rules
+No database dependency. All persistence is JSON-based (settings.json, Routines/*.json).
+If a database is added in future, use db_connector (_connect, status=promoted)
+from the component registry and follow the eco_ table naming prefix for
+ecosystem-level tables or orch_ for project-owned tables.
+
+## Component Registry
+Before writing any new utility function, check:
+ecosystem-core/component_registry/registry.json
+db_connector (status=promoted) is available for any future DB connections.
+save_json/load_json (status=stable) could replace hand-rolled JSON persistence.
+
+## sync_core (coming in Phase 5)
+Will be imported for: manifest reading, schema version checking,
+event bus push to mothership. Pin to specific commit hash when added.
+
 ## Connected tools (MCP)
 - GitHub: connected
 - Google Drive: connected
