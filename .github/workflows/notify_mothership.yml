@@ -1,0 +1,38 @@
+name: Notify Mothership
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from project
+        id: version
+        run: |
+          if [ -f "version.txt" ]; then
+            echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
+          elif [ -f "pyproject.toml" ]; then
+            VERSION=$(grep -m1 'version' pyproject.toml | tr -d '"' | awk '{print $3}')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "version=0.1.0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch to ecosystem-core
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.ECOSYSTEM_PAT }}
+          repository: mperrego/ecosystem-core
+          event-type: project-update
+          client-payload: |
+            {
+              "project": "routine-orchestrator",
+              "version": "${{ steps.version.outputs.version }}",
+              "status": "active",
+              "schema_version": "0",
+              "timestamp": "${{ github.event.head_commit.timestamp }}"
+            }
