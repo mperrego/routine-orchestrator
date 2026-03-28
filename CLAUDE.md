@@ -103,9 +103,17 @@ ecosystem-core/component_registry/registry.json
 db_connector (status=promoted) is available for any future DB connections.
 save_json/load_json (status=stable) could replace hand-rolled JSON persistence.
 
-## sync_core (coming in Phase 5)
-Will be imported for: manifest reading, schema version checking,
-event bus push to mothership. Pin to specific commit hash when added.
+## sync_core
+Pinned version: sync_core-v1.0.0
+Commit hash: 1a7026e97c957b5f214524f945438eed970ee814
+Import path: set ECOSYSTEM_CORE_PATH env var to ecosystem-core folder
+Do NOT update this pin without testing -- always pin to a specific
+commit hash, never to "main" or "latest".
+Note: Only manifest_reader is imported (no DB in this project).
+
+## Environment Variables (Ecosystem)
+ECOSYSTEM_CORE_PATH -- path to ecosystem-core repo on local machine
+ECOSYSTEM_PAT -- GitHub token for dispatch events (set as Windows env var)
 
 ## Connected tools (MCP)
 - GitHub: connected

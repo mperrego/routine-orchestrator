@@ -19,6 +19,16 @@ import json
 import tkinter as tk
 import time
 
+# -- Ecosystem sync ------------------------------------------------
+try:
+    ECOSYSTEM_CORE = os.environ.get('ECOSYSTEM_CORE_PATH', '')
+    if ECOSYSTEM_CORE and ECOSYSTEM_CORE not in sys.path:
+        sys.path.insert(0, ECOSYSTEM_CORE)
+    from sync_core import manifest_reader
+except ImportError:
+    manifest_reader = None  # sync_core not available -- skip silently
+# ------------------------------------------------------------------
+
 class Action:
     def __init__(self, action_type, data, wait_on_completion=True):
         self.type = action_type
