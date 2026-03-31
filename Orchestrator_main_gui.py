@@ -182,6 +182,7 @@ class RoutineApp(ctk.CTk):
         # Standard routine management options
         file_menu.add_command(label="New Routine", command=self.clear_routine)
         file_menu.add_command(label="Save Routine", command=self.save_routine)
+        file_menu.add_command(label="Save As...", command=self.save_routine_as)
         file_menu.add_command(label="Load Routine", command=self.load_routine)
         
         # Recent Files submenu
@@ -224,9 +225,20 @@ class RoutineApp(ctk.CTk):
             command=self.reset_settings
         )
 
+    def _update_title(self):
+        """Updates the window title to show the loaded routine and unsaved state."""
+        base = "Routine Orchestrator"
+        if self.current_routine_path:
+            name = os.path.splitext(os.path.basename(self.current_routine_path))[0]
+            base = f"Routine Orchestrator - {name}"
+        if self.has_unsaved_changes and self.actions:
+            base += "  (routine updated, needs to be saved)"
+        self.title(base)
+
     def _mark_dirty(self):
         """Flag that the routine has unsaved changes."""
         self.has_unsaved_changes = True
+        self._update_title()
 
     def _prompt_save_if_dirty(self):
         """If there are unsaved changes, ask to save. Returns False if user cancels."""
@@ -247,6 +259,7 @@ class RoutineApp(ctk.CTk):
         self.actions = []
         self.has_unsaved_changes = False
         self.current_routine_path = None
+        self._update_title()
         self.update_display()
         self.safe_status_update("New routine started.")
 
@@ -311,6 +324,32 @@ class RoutineApp(ctk.CTk):
         self.after(0, lambda: self.stop_btn.configure(state="normal"))
         self.after(0, lambda: self.skip_btn.configure(state="normal"))
 
+        # Check speaker reachability before starting
+        self._device_fallback = {}  # Maps unreachable device names to None (system default)
+        devices_to_check = set()
+        for a in self.actions:
+            if a.type == "Audio":
+                for item in a.data:
+                    dev = item.get("device", None)
+                    if dev:
+                        devices_to_check.add(dev)
+            elif a.type == "Announcement" and isinstance(a.data, dict):
+                dev = a.data.get("device", None)
+                if dev:
+                    devices_to_check.add(dev)
+
+        for device_name in devices_to_check:
+            self.safe_status_update(f"Checking speaker: {device_name}...")
+            if not audio_engine.is_device_reachable(device_name):
+                self._device_fallback[device_name] = None
+                print(f"Device not reachable: {device_name} - falling back to system default")
+                self.safe_status_update(f"{device_name} not in range - using system speaker")
+                # Announce the fallback so the listener knows
+                audio_engine.speak(
+                    f"{device_name} is not in range. Defaulting to system speaker.",
+                    device=None, volume=0
+                )
+
         for a in self.actions:
             if self._should_stop():
                 break
@@ -349,8 +388,12 @@ class RoutineApp(ctk.CTk):
             duration_limit = int(item.get('duration', 0))
             device = item.get('device', None)
             volume = int(item.get('volume', 0))
+
+            # Apply fallback if the device was unreachable
+            if device and device in self._device_fallback:
+                device = self._device_fallback[device]
             is_cast = device and device.startswith("[Cast] ")
-            cast_name = device[7:] if is_cast else None  # Strip "[Cast] " prefix
+            cast_name = device[7:] if is_cast else None
 
             for i in range(repeat_count):
                 if self._should_stop(): break
@@ -395,6 +438,10 @@ class RoutineApp(ctk.CTk):
             text = action.data.get("text", "")
             device = action.data.get("device", None)
             volume = int(action.data.get("volume", 0))
+
+        # Apply fallback if the device was unreachable
+        if device and device in self._device_fallback:
+            device = self._device_fallback[device]
 
         device_label = f" → {device}" if device else ""
         self.safe_status_update(f"Announcement: {text[:30]}...{device_label}")
@@ -489,39 +536,45 @@ class RoutineApp(ctk.CTk):
         pygame.mixer.quit(); self.destroy(); sys.exit()
 
 
+    def _save_to_file(self, filename):
+        """Writes the current actions to a JSON file and updates state."""
+        data = [
+            {
+                "type": a.type,
+                "data": a.data,
+                "wait": a.wait_on_completion
+            }
+            for a in self.actions
+        ]
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=4)
+        self.update_recent_files(filename)
+        self.has_unsaved_changes = False
+        self.current_routine_path = filename
+        self._update_title()
+        self.safe_status_update(f"Saved: {os.path.basename(filename)}")
+
     def save_routine(self):
-        """Saves the current list of actions to a JSON file and updates Recents."""
-        # Open the save dialog, defaulting to your Routines folder
+        """Quick-saves to the current file, or prompts if no file is loaded."""
+        if self.current_routine_path:
+            try:
+                self._save_to_file(self.current_routine_path)
+            except Exception as e:
+                messagebox.showerror("Save Error", f"An error occurred while saving: {e}")
+        else:
+            self.save_routine_as()
+
+    def save_routine_as(self):
+        """Always prompts for a filename, useful for saving a copy under a new name."""
         filename = filedialog.asksaveasfilename(
             initialdir=self.routines_dir,
-            title="Save Routine",
+            title="Save Routine As",
             defaultextension=".json",
             filetypes=[("JSON Files", "*.json")]
         )
-        
         if filename:
             try:
-                # We change "wait" to "wait_on_completion" here
-                data = [
-                    {
-                        "type": a.type, 
-                        "data": a.data, 
-                        "wait": a.wait_on_completion # <--- Matches your class
-                    } 
-                    for a in self.actions
-                ]
-                
-                # Write to the file
-                with open(filename, 'w') as f:
-                    json.dump(data, f, indent=4)
-                
-                # Update Recents list
-                self.update_recent_files(filename)
-                
-                self.has_unsaved_changes = False
-                self.current_routine_path = filename
-                self.safe_status_update(f"Saved: {os.path.basename(filename)}")
-                messagebox.showinfo("Success", "Routine saved successfully.")
+                self._save_to_file(filename)
             except Exception as e:
                 messagebox.showerror("Save Error", f"An error occurred while saving: {e}")
 
@@ -553,6 +606,7 @@ class RoutineApp(ctk.CTk):
                 
                 self.has_unsaved_changes = False
                 self.current_routine_path = filename
+                self._update_title()
                 self.safe_status_update(f"Loaded: {os.path.basename(filename)}")
             except Exception as e:
                 messagebox.showerror("Load Error", f"An error occurred while loading: {e}")
@@ -807,32 +861,34 @@ class RoutineApp(ctk.CTk):
         with open(self.settings_file, 'w') as f:
             json.dump(settings, f, indent=4)
     def copy_cli_command(self):
-        """Generates a CLI command for the current script and routine, then copies to clipboard."""
-        # Get the current script path
+        """Generates a TriggerCMD-ready command for a saved routine, then copies to clipboard."""
+        import sys
         script_path = os.path.abspath(__file__)
-        
-        # Ask the user which routine they want to create a command for
-        f = filedialog.askopenfilename(
-            initialdir=self.routines_dir,
-            title="Select Routine for CLI Command",
-            filetypes=[("JSON Files", "*.json")]
-        )
-        
-        if f:
-            # Extract just the filename without the .json extension
+        python_exe = sys.executable
+        log_file = os.path.join(self.base_dir, "log.txt")
+
+        # If a routine is already loaded, use it; otherwise ask
+        if self.current_routine_path:
+            routine_name = os.path.splitext(os.path.basename(self.current_routine_path))[0]
+        else:
+            f = filedialog.askopenfilename(
+                initialdir=self.routines_dir,
+                title="Select Routine for CLI Command",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if not f:
+                return
             routine_name = os.path.splitext(os.path.basename(f))[0]
-            
-            # Format the command (using quotes in case there are spaces in paths)
-            cli_cmd = f'python "{script_path}" "{routine_name}"'
-            
-            # Copy to clipboard
-            self.clipboard_clear()
-            self.clipboard_append(cli_cmd)
-            self.update() # Required for some systems to register the clipboard change
-            
-            # Show a message to the user
-            messagebox.showinfo("CLI Command Copied", f"The following command is now on your clipboard:\n\n{cli_cmd}")
-            self.safe_status_update("CLI command copied to clipboard.")
+
+        cli_cmd = f'"{python_exe}" "{script_path}" {routine_name} > "{log_file}" 2>&1'
+
+        self.clipboard_clear()
+        self.clipboard_append(cli_cmd)
+        self.update()
+
+        messagebox.showinfo("CLI Command Copied",
+                            f"The following command is now on your clipboard:\n\n{cli_cmd}")
+        self.safe_status_update("CLI command copied to clipboard.")
 
     def update_recent_files(self, file_path):
         """
@@ -879,6 +935,7 @@ class RoutineApp(ctk.CTk):
                 
                 self.has_unsaved_changes = False
                 self.current_routine_path = path
+                self._update_title()
                 self.safe_status_update(f"Loaded: {os.path.basename(path)}")
             except Exception as e:
                 messagebox.showerror("Load Error", f"Could not load routine: {e}")

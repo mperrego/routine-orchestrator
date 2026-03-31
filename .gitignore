@@ -15,6 +15,10 @@ __pycache__/
 # MCP config (contains API tokens)
 .mcp.json
 
+# Runtime signal files (CLI remote stop)
+orchestrator.pid
+orchestrator.stop
+
 # OS-specific
 Thumbs.db
 Desktop.ini

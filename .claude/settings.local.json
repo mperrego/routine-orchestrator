@@ -6,6 +6,8 @@
       "Write",
       "Glob",
       "Grep",
+      "WebSearch",
+      "WebFetch",
       "Bash(python:*)",
       "Bash(pip:*)",
       "Bash(git:*)",
@@ -14,13 +16,13 @@
       "Bash(cat:*)",
       "Bash(tasklist:*)",
       "Bash(taskkill:*)",
+      "Bash(ipconfig:*)",
       "Bash(venv/Scripts/pip:*)",
+      "Bash(venv/Scripts/python:*)",
       "mcp__github__*",
       "mcp__gdrive__*",
-      "Skill(update-config)",
-      "WebSearch",
-      "Bash(ipconfig)"
+      "Skill(update-config)"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   }
 }

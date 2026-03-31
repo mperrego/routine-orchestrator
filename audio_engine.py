@@ -142,7 +142,7 @@ def set_cast_volume(cast_name, volume_percent):
             cast = casts[0]
             cast.wait()
             cast.set_volume(volume_percent / 100.0)
-            print(f"Cast volume set: {cast_name} → {volume_percent}%")
+            print(f"Cast volume set: {cast_name} -> {volume_percent}%")
             cast.disconnect()
         else:
             print(f"Cast device not found: {cast_name}")
@@ -197,6 +197,30 @@ def _stop_http_server():
         _http_server = None
         _http_thread = None
 
+def is_device_reachable(device_name):
+    """Checks if an audio device (Cast or Bluetooth/system) is available."""
+    if device_name and device_name.startswith("[Cast] "):
+        cast_name = device_name[7:]
+        try:
+            import pychromecast
+            services, browser = pychromecast.discovery.discover_chromecasts(timeout=5)
+            pychromecast.discovery.stop_discovery(browser)
+            found_names = [s.friendly_name for s in services]
+            return cast_name in found_names
+        except Exception as e:
+            print(f"Cast reachability check error: {e}")
+            return False
+    else:
+        # Bluetooth / system device — check SDL2 device list
+        try:
+            from pygame._sdl2.audio import get_audio_device_names
+            available = list(get_audio_device_names(False))
+            return device_name in available
+        except Exception as e:
+            print(f"Device enumeration error: {e}")
+            return False
+
+
 def play_audio_cast(file_path, cast_name, volume_percent=0):
     """Casts an audio file to a Cast device via local HTTP server. Sets volume on same connection."""
     global _active_cast, _active_browser
@@ -234,7 +258,7 @@ def play_audio_cast(file_path, cast_name, volume_percent=0):
         # Set volume on this connection before playing
         if volume_percent > 0:
             _active_cast.set_volume(volume_percent / 100.0)
-            print(f"Cast volume set: {cast_name} → {volume_percent}%")
+            print(f"Cast volume set: {cast_name} -> {volume_percent}%")
             time.sleep(0.5)  # Give device time to apply volume
 
         # Determine content type
@@ -246,7 +270,7 @@ def play_audio_cast(file_path, cast_name, volume_percent=0):
         mc.block_until_active(timeout=10)
         # Wait for playback to actually start so is_cast_playing() works
         time.sleep(2)
-        print(f"Casting: {file_name} → {cast_name}")
+        print(f"Casting: {file_name} -> {cast_name}")
         return True
 
     except Exception as e:

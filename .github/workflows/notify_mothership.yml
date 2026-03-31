@@ -13,8 +13,9 @@ jobs:
       - name: Read version from project
         id: version
         run: |
+          # version.txt is the canonical source — kept in sync by /handoff
           if [ -f "version.txt" ]; then
-            echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
+            echo "version=$(cat version.txt | tr -d '[:space:]')" >> $GITHUB_OUTPUT
           elif [ -f "pyproject.toml" ]; then
             VERSION=$(grep -m1 'version' pyproject.toml | tr -d '"' | awk '{print $3}')
             echo "version=$VERSION" >> $GITHUB_OUTPUT

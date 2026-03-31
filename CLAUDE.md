@@ -69,16 +69,21 @@ Setting Up Python Routines/
 - Never display, print, or log the contents of .env under any circumstances
 
 ## Current status
-- Version: v8.5
+- Version: v9.4
 - GUI: fully working — create, edit, save, load, and run routines
 - Audio playback: working — MP3/WAV direct, M4A auto-converts, Sequential and Random modes
-- TTS announcements: working via gTTS
+- Cast playback: working — WiFi casting to Google/Nest speakers via pychromecast
+- TTS announcements: working via gTTS (system speaker and Cast)
 - Wait actions: working with countdown display
 - External script execution: working and verified with test_script.py
 - CLI auto-run: working — pass routine name as arg, auto-loads, runs, and closes
 - Bookmarking: working — .last_played.txt tracks last-played file per folder
 - Timed playback: working — "playing for X seconds" duration labels
 - Status bar: working — real-time progress display during routine execution
+- Title bar: shows loaded routine name + unsaved changes indicator
+- Save/Save As: Save quick-saves to current file; Save As prompts for new name
+- CLI command builder: includes full python.exe path, routine name, and log redirect
+- Speaker fallback: checks device reachability at routine start, announces and falls back to system default if unreachable
 - requirements.txt created with pinned versions
 
 
@@ -127,10 +132,6 @@ ECOSYSTEM_PAT -- GitHub token for dispatch events (set as Windows env var)
 - MCP servers must be registered in ~/.claude.json via claude mcp add
 - settings.json files are NOT where MCP is registered — learned 2026-03-22
 
-## Rules added from mistakes
-<!-- Add a line here every time Claude does something unexpected -->
-<!-- Format: [date] never do X because Y -->
-
 ## Standing instructions — do these automatically
 
 ### After completing any task or fix
@@ -160,4 +161,30 @@ ECOSYSTEM_PAT -- GitHub token for dispatch events (set as Windows env var)
 - Build one phase at a time, test before moving to the next
 - Never build Phase 4 without explicit instruction and an agreed plan
 
-## Session notes — 2026-03-22
+## AUTO-HANDOFF
+At the start of every session, automatically run the /handoff sequence
+before waiting for instructions.
+
+## HANDOFF INCLUDES BACKUP
+Whenever /handoff is called, ALSO perform these steps after the status summary:
+1. If there are uncommitted changes: stage, commit with a descriptive message, and push to GitHub
+2. Update the tracker spreadsheet with the commit details
+3. Update CLAUDE.md "Current status" section with current version, last completed work, and session date
+
+## Version Tracking
+- `version.txt` in the project root is the canonical version source.
+- The `/handoff` command syncs the version from CLAUDE.md → `version.txt` before committing.
+- On push, `notify_mothership.yml` reads `version.txt` → dispatches to ecosystem-core → updates manifest.json → updates Master Sheet Tab 1 automatically.
+- Never edit `version.txt` manually — let `/handoff` manage it.
+
+## Rules added from mistakes
+<!-- Add a line here every time Claude does something unexpected -->
+<!-- Format: [date] never do X because Y -->
+- [2026-03-31] Never use Unicode characters (→, etc.) in print statements — Windows console encoding crashes on them, silently aborting entire functions
+
+## Session notes — 2026-03-31
+- Fixed Cast audio bug: Unicode → in print statements crashed play_audio_cast() on Windows
+- Added title bar: shows loaded routine name + "(routine updated, needs to be saved)"
+- Split Save into Save (quick-save) and Save As (new name)
+- Updated CLI command builder: full python.exe path, routine name only, log redirect
+- Added speaker fallback: checks all devices (Cast + Bluetooth) at routine start, announces and defaults to system speaker if unreachable
