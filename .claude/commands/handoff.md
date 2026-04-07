@@ -17,10 +17,13 @@ Write that version (without the `v` prefix) to `version.txt` in the project root
 This ensures `notify_mothership.yml` dispatches the correct version to ecosystem-core on push,
 which in turn updates `manifest.json` and the Master Tracker spreadsheet automatically.
 
-## Step 4 — Backup
-1. If there are uncommitted changes: stage all changes, commit with a descriptive message, and push to GitHub.
-2. Update the tracker spreadsheet with the commit details (date, summary of changes).
-3. Update CLAUDE.md "Current status" section with current version, last completed work, and session date.
+## Step 4 — Append session note + Backup
+1. Compute the current year-month dynamically (e.g. `2026-04`).
+2. Open `docs/sessions/{YYYY-MM}.md` (create it with an `# Session Notes — Month YYYY` header if missing).
+3. Append a date-stamped entry summarizing what was done this session. NEVER overwrite — always append.
+4. If there are uncommitted changes: stage all changes, commit with a descriptive message, and push to GitHub.
+5. Update the tracker spreadsheet with the commit details (date, summary of changes).
+6. The ONLY field in CLAUDE.md that `/handoff` may mutate is "Currently working on" under Current status. NEVER write session notes into CLAUDE.md — they live exclusively in `docs/sessions/`.
 
 ## Step 5 — Check git status
 Run `git status` and `git log --oneline -5` to confirm the push succeeded and see recent history.
