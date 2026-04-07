@@ -61,9 +61,9 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                       fg_color="#333333", width=100,
                       command=self.exit_no_save).pack(side="right", padx=5)
 
-        # Save & Close Button (Linked to our cleanup logic)
+        # Confirm Button (applies changes to routine in memory, not saved to disk)
         ctk.CTkButton(ctrl,
-                      text="Save & Close",
+                      text="Confirm",
                       fg_color="green",
                       command=self.on_closing).pack(side="right", padx=5)
         
@@ -335,8 +335,8 @@ class AnnouncementEditor(ctk.CTkToplevel):
         self.volume_entry.insert(0, str(action.data.get("volume", 0)))
         self.volume_entry.pack(side="left", padx=5)
 
-        # Save button
-        ctk.CTkButton(self, text="Save & Close", fg_color="green",
+        # Confirm button (applies changes to routine in memory, not saved to disk)
+        ctk.CTkButton(self, text="Confirm", fg_color="green",
                        command=self.on_closing).pack(pady=15)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)

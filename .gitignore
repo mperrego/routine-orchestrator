@@ -8,6 +8,9 @@ venv/
 .last_played.txt
 last_played.txt
 temp_converted.mp3
+temp_announcement.mp3
+log.txt
+*.gsheet
 __pycache__/
 *.pyc
 /Routines/

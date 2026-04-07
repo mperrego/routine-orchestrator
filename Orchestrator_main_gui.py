@@ -41,7 +41,12 @@ class RoutineApp(ctk.CTk):
         
         # 1. WINDOW SETUP
         self.title("Routine Orchestrator")
-        self.geometry("1100x950")
+        win_w, win_h = 1100, 950
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        x = (screen_w - win_w) // 2
+        y = (screen_h - win_h) // 2
+        self.geometry(f"{win_w}x{win_h}+{x}+{y}")
         
         # 2. PATHS & PERSISTENCE (Must be defined before UI and load_settings)
         # Get the directory where Orchestrator_main_gui.py is located
