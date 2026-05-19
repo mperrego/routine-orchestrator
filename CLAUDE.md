@@ -11,10 +11,11 @@ A GUI application for building and running automation routines — sequences of 
 - Activate venv: `venv\Scripts\activate` (PowerShell) or `source venv/Scripts/activate` (bash)
 
 ## How to run
-- Run GUI: `python Orchestrator_main_gui.py`
-- Run routine from CLI (auto-run + auto-close): `python Orchestrator_main_gui.py RoutineName`
+- Run GUI: `python bootstrap.py`
+- Run routine from CLI (auto-run + auto-close): `python bootstrap.py RoutineName`
   - RoutineName matches a JSON file in `Routines/` (e.g. `PlaySilvaMeditation`)
-- Install dependencies: `pip install -r requirements.txt`
+- bootstrap.py checks/rebuilds the venv automatically on first run per machine
+- Install dependencies (manual fallback): `pip install -r requirements.txt`
 
 ## Stack
 Python 3.12 · customtkinter · tkinter · pygame · pydub · gTTS · pyttsx3 · pychromecast · threading · subprocess
