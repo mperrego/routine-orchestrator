@@ -27,6 +27,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.duration_entries = []
         self.device_vars = []
         self.volume_entries = []
+        self.gap_entries = []
 
         # 2. Directory Tracking
         self.editor_last_dir = parent.last_audio_dir
@@ -123,6 +124,10 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                 # Sync Volume (0 = don't change)
                 self.action.data[i]['volume'] = self._safe_int(
                     self.volume_entries[i].get(), default=0)
+
+                # Sync Gap (seconds to wait after each play)
+                self.action.data[i]['gap'] = self._safe_int(
+                    self.gap_entries[i].get(), default=0)
             except IndexError:
                 pass
 
@@ -181,6 +186,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.duration_entries = []
         self.device_vars = []
         self.volume_entries = []
+        self.gap_entries = []
         valid_exts = ('.mp3', '.wav', '.m4a')
 
         # Get available output devices, merged with saved speakers from settings
@@ -238,6 +244,13 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             vol_ent.insert(0, str(item.get('volume', 0)))
             vol_ent.pack(side="left", padx=5)
             self.volume_entries.append(vol_ent)
+
+            # Gap (seconds to wait after each play of this file)
+            ctk.CTkLabel(device_row, text="Gap (s):", font=("Arial", 11)).pack(side="left", padx=(15, 0))
+            gap_ent = ctk.CTkEntry(device_row, width=40)
+            gap_ent.insert(0, str(item.get('gap', 0)))
+            gap_ent.pack(side="left", padx=5)
+            self.gap_entries.append(gap_ent)
 
             # --- RESTORED: File Preview Box ---
             if not is_file:

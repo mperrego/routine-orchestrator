@@ -21,7 +21,22 @@
       "Bash(venv/Scripts/python:*)",
       "mcp__github__*",
       "mcp__gdrive__*",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "Bash(./venv/Scripts/python.exe Orchestrator_main_gui.py)",
+      "Bash(where python *)",
+      "Read(//c/Users/Michaels Alienware/AppData/Local/Programs/Python/**)",
+      "Bash(command -v py)",
+      "Bash(/c/Users/Michaels Alienware/AppData/Local/Programs/Python/Python312/python.exe *)",
+      "Bash(\"/c/Users/Michaels Alienware/AppData/Local/Programs/Python/Python312/python.exe\" -m venv venv --clear)",
+      "Bash(\"/c/Users/Michaels Alienware/AppData/Local/Programs/Python/Python312/python.exe\" -m venv venv)",
+      "Bash(./venv/Scripts/pip.exe install *)",
+      "Bash(npm update *)",
+      "Bash(venv/Scripts/python.exe *)",
+      "PowerShell(Get-PnpDevice *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(python bootstrap.py PlayMorningMotivation)"
     ],
     "defaultMode": "auto"
   }

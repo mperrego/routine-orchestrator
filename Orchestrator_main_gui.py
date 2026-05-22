@@ -71,6 +71,7 @@ class RoutineApp(ctk.CTk):
         self.actions = []
         self.selected_index = ctk.IntVar(value=-1)
         self.is_running = False
+        self.is_paused = False
         self.auto_close = False
         self.has_unsaved_changes = False
         self.current_routine_path = None
@@ -123,11 +124,15 @@ class RoutineApp(ctk.CTk):
                                      font=("Arial", 14, "bold"), command=self.run_thread)
         self.play_btn.pack(side="left", fill="x", expand=True, padx=5)
         
-        self.skip_btn = ctk.CTkButton(f_run, text="SKIP", fg_color="#cc8400", 
+        self.skip_btn = ctk.CTkButton(f_run, text="SKIP", fg_color="#cc8400",
                                      state="disabled", width=80, command=self.skip_item)
         self.skip_btn.pack(side="left", padx=5)
 
-        self.stop_btn = ctk.CTkButton(f_run, text="STOP", fg_color="darkred", 
+        self.pause_btn = ctk.CTkButton(f_run, text="PAUSE", fg_color="#4a6fa5",
+                                      state="disabled", width=80, command=self.toggle_pause)
+        self.pause_btn.pack(side="left", padx=5)
+
+        self.stop_btn = ctk.CTkButton(f_run, text="STOP", fg_color="darkred",
                                      state="disabled", width=80, command=self.stop_routine)
         self.stop_btn.pack(side="left", padx=5)
 
@@ -281,9 +286,26 @@ class RoutineApp(ctk.CTk):
         audio_engine.stop_cast()
         self.safe_status_update("Skipping current item...") 
 
+    def toggle_pause(self):
+        """Pauses or resumes local pygame audio playback and updates the button label."""
+        if not self.is_paused:
+            pygame.mixer.music.pause()
+            self.is_paused = True
+            self.pause_btn.configure(text="RESUME")
+        else:
+            pygame.mixer.music.unpause()
+            self.is_paused = False
+            self.pause_btn.configure(text="PAUSE")
+
+    def _reset_pause_state(self):
+        """Clears pause state and restores the pause button to its default appearance."""
+        self.is_paused = False
+        self.after(0, lambda: self.pause_btn.configure(text="PAUSE", state="disabled"))
+
     def stop_routine(self):
         """Stops the entire routine, audio, and any active Cast."""
         self.is_running = False
+        self._reset_pause_state()
         audio_engine.stop_audio()
         audio_engine.stop_cast()
         self.safe_status_update("Routine Stopped.")
@@ -373,6 +395,7 @@ class RoutineApp(ctk.CTk):
         # --- ROUTINE COMPLETE ---
         self.is_running = False
         self._cleanup_signal_files()
+        self._reset_pause_state()
         self.safe_status_update("Ready")
 
         # Reset UI Buttons
@@ -400,6 +423,8 @@ class RoutineApp(ctk.CTk):
             is_cast = device and device.startswith("[Cast] ")
             cast_name = device[7:] if is_cast else None
 
+            gap = int(item.get('gap', 0))
+
             for i in range(repeat_count):
                 if self._should_stop(): break
 
@@ -419,16 +444,28 @@ class RoutineApp(ctk.CTk):
                                     audio_engine.stop_cast()
                                     break
                                 time.sleep(0.5)
-                            # Only stop between files if there are more to play
                             audio_engine.stop_cast()
                     else:
                         # Bluetooth / system device playback via pygame
                         audio_engine.play_audio(full_path, device=device)
+                        self.after(0, lambda: self.pause_btn.configure(state="normal"))
                         start_time = time.time()
-                        while audio_engine.is_playing() and not self._should_stop():
+                        while (audio_engine.is_playing() or self.is_paused) and not self._should_stop():
+                            if self.is_paused:
+                                time.sleep(0.1)
+                                continue
                             if duration_limit > 0 and (time.time() - start_time) >= duration_limit:
                                 audio_engine.stop_audio()
                                 break
+                            time.sleep(0.1)
+                        self.after(0, lambda: self.pause_btn.configure(state="disabled", text="PAUSE"))
+                        self.is_paused = False
+
+                    # Gap between plays (interruptible by Stop)
+                    if gap > 0 and not self._should_stop():
+                        self.safe_status_update(f"Gap: waiting {gap}s...")
+                        gap_end = time.time() + gap
+                        while time.time() < gap_end and not self._should_stop():
                             time.sleep(0.1)
 
         # Restore default output device after this audio action completes
