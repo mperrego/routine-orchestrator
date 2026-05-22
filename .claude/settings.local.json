@@ -36,7 +36,19 @@
       "PowerShell(Get-PnpDevice *)",
       "PowerShell(Test-Path *)",
       "PowerShell(Get-ChildItem *)",
-      "PowerShell(python bootstrap.py PlayMorningMotivation)"
+      "PowerShell(python bootstrap.py PlayMorningMotivation)",
+      "Bash(claude mcp *)",
+      "PowerShell(Get-Content *)",
+      "Bash(./venv/Scripts/pip.exe show *)",
+      "PowerShell(& .\\\\venv\\\\Scripts\\\\pip.exe show gspread; \"---\"; & .\\\\venv\\\\Scripts\\\\pip.exe show google-auth)",
+      "PowerShell(& .\\\\venv\\\\Scripts\\\\pip.exe install gspread google-auth 2>&1 | Select-Object -Last 15)",
+      "PowerShell(& .\\\\venv\\\\Scripts\\\\pip.exe install gspread google-auth)",
+      "PowerShell($ErrorActionPreference='Continue'; Test-Path .\\\\venv\\\\Scripts\\\\pip.exe; & .\\\\venv\\\\Scripts\\\\pip.exe --version)",
+      "Bash(./venv/Scripts/pip.exe --version)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(./venv/Scripts/python.exe --version)",
+      "PowerShell(Get-Process *)",
+      "Bash(./venv/Scripts/python.exe tools/tracker_sync.py read)"
     ],
     "defaultMode": "auto"
   }

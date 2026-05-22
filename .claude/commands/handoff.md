@@ -6,10 +6,15 @@ Perform a full session handoff by completing these steps in order:
 Read the project CLAUDE.md file at the project root to load current status, known issues, rules, and standing instructions.
 
 ## Step 2 — Read the Google Sheets Tracker
-Use WebFetch to read the routine-orchestrator tracker spreadsheet:
-URL: https://docs.google.com/spreadsheets/d/1jWYuZMoj-3VnyywgbnIzmzrvjAgyne8spazrEOl4TM8/edit
+Run `venv/Scripts/python.exe tools/tracker_sync.py read` to dump every tab of the
+routine-orchestrator tracker. The script uses the ecosystem service account
+(`GOOGLE_SHEETS_CREDS_PATH` env var) — no browser auth needed.
 
-Read all tabs to get the current task status, progress, and any blockers.
+If it errors with "give Editor access", surface the message verbatim so the user
+can share the sheet with the service account email; do not retry blindly.
+
+Tracker URL (for reference only — do not WebFetch, it is auth-walled):
+https://docs.google.com/spreadsheets/d/1jWYuZMoj-3VnyywgbnIzmzrvjAgyne8spazrEOl4TM8/edit
 
 ## Step 3 — Sync version.txt
 Read the CLAUDE.md "Current status" section and extract the version number (e.g. `v8.5` → `8.5`).
@@ -22,7 +27,9 @@ which in turn updates `manifest.json` and the Master Tracker spreadsheet automat
 2. Open `docs/sessions/{YYYY-MM}.md` (create it with an `# Session Notes — Month YYYY` header if missing).
 3. Append a date-stamped entry summarizing what was done this session. NEVER overwrite — always append.
 4. If there are uncommitted changes: stage all changes, commit with a descriptive message, and push to GitHub.
-5. Update the tracker spreadsheet with the commit details (date, summary of changes).
+5. Update the tracker spreadsheet with the commit details by running:
+   `venv/Scripts/python.exe tools/tracker_sync.py log-commit --summary "..." [--in-progress "..."] [--next-steps "..."]`
+   This appends a row (date | summary | in-progress | next steps) to the first tab.
 6. The ONLY field in CLAUDE.md that `/handoff` may mutate is "Currently working on" under Current status. NEVER write session notes into CLAUDE.md — they live exclusively in `docs/sessions/`.
 
 ## Step 5 — Check git status
