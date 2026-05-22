@@ -56,8 +56,12 @@ def cmd_read(_args):
 
 
 def cmd_log_commit(args):
+    import gspread
     sheet, _ = _client()
-    ws = sheet.get_worksheet(0)
+    try:
+        ws = sheet.worksheet("Session Log")
+    except gspread.exceptions.WorksheetNotFound:
+        sys.exit("ERROR: tracker has no 'Session Log' tab — refusing to guess which tab to append to.")
     row = [
         args.date or datetime.now().strftime("%Y-%m-%d"),
         args.summary,
