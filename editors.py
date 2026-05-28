@@ -28,13 +28,14 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.device_vars = []
         self.volume_entries = []
         self.gap_entries = []
+        self._is_dirty = False
 
         # 2. Directory Tracking
         self.editor_last_dir = parent.last_audio_dir
         
-        # 3. Menu and Close Protocol
+        # 3. Menu and Close Protocol — X button mirrors the Exit button (no implicit save)
         self.setup_editor_menu()
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.protocol("WM_DELETE_WINDOW", self.exit_no_save)
 
         # 4. UI - MAIN SCROLLABLE LIST
         # This frame holds all the audio files you add
@@ -56,18 +57,23 @@ class AudioSequenceEditor(ctk.CTkToplevel):
                       text="+ Add Playing Multiple Files", 
                       command=self.add_folder).pack(side="left", padx=5)
         
-        # Exit without saving
-        ctk.CTkButton(ctrl,
-                      text="Exit (No Save)",
-                      fg_color="#333333", width=100,
-                      command=self.exit_no_save).pack(side="right", padx=5)
+        # Exit button (text toggles based on dirty state — width fits longest label)
+        self.exit_btn = ctk.CTkButton(ctrl,
+                                      text="Exit",
+                                      fg_color="#333333", width=160,
+                                      command=self.exit_no_save)
+        self.exit_btn.pack(side="right", padx=5)
 
-        # Confirm Button (applies changes to routine in memory, not saved to disk)
-        ctk.CTkButton(ctrl,
-                      text="Confirm",
-                      fg_color="green",
-                      command=self.on_closing).pack(side="right", padx=5)
-        
+        # Save button (applies pending edits to in-memory action data; stays open)
+        # Starts disabled+gray; switches to enabled+green as soon as something changes.
+        self.save_btn = ctk.CTkButton(ctrl,
+                                      text="Save",
+                                      fg_color="#555555",
+                                      hover_color="#555555",
+                                      state="disabled",
+                                      command=self.save_changes)
+        self.save_btn.pack(side="right", padx=5)
+
         # 6. INITIAL POPULATE
         self.update_list()
 
@@ -88,7 +94,33 @@ class AudioSequenceEditor(ctk.CTkToplevel):
     def clear_all_items(self):
         if messagebox.askyesno("Clear List", "Remove all audio items from this sequence?"):
             self.action.data = []
+            self._mark_dirty()
             self.update_list()
+
+    def _mark_dirty(self, *_args):
+        """Called whenever the user changes anything in the editor."""
+        if not self._is_dirty:
+            self._is_dirty = True
+            self._update_buttons()
+
+    def _update_buttons(self):
+        if self._is_dirty:
+            self.save_btn.configure(state="normal", fg_color="green",
+                                    hover_color="#1f7a1f")
+            self.exit_btn.configure(text="Exit without Saving")
+        else:
+            self.save_btn.configure(state="disabled", fg_color="#555555",
+                                    hover_color="#555555")
+            self.exit_btn.configure(text="Exit")
+
+    def save_changes(self):
+        """Apply pending edits to action.data without closing the editor."""
+        self.sync_data()
+        if self.action.data:
+            self.parent_app._mark_dirty()
+        self.parent_app.update_display()
+        self._is_dirty = False
+        self._update_buttons()
 
     def _safe_int(self, value, default=0, minimum=0):
         """Converts a string to int, returning default if invalid."""
@@ -154,8 +186,9 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             self.parent_app.save_settings()
             
             self.action.data.append({"path": f, "mode": "Single", "repeat": 1})
+            self._mark_dirty()
             self.update_list()
-            
+
         self.attributes("-topmost", True)
 
     def add_folder(self):
@@ -174,8 +207,9 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             self.parent_app.save_settings()
             
             self.action.data.append({"path": folder, "mode": "Random", "repeat": 1})
+            self._mark_dirty()
             self.update_list()
-            
+
         self.attributes("-topmost", True)
  
 
@@ -213,6 +247,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             ctk.CTkLabel(header, text="Play:").pack(side="left", padx=(10, 0))
             ent = ctk.CTkEntry(header, width=40)
             ent.insert(0, str(item.get('repeat', 1)))
+            ent.bind("<KeyRelease>", self._mark_dirty)
             ent.pack(side="left", padx=5)
             self.repeat_entries.append(ent)
 
@@ -220,6 +255,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             ctk.CTkLabel(header, text="Sec (0=Full):").pack(side="left", padx=(10, 0))
             dur_ent = ctk.CTkEntry(header, width=45)
             dur_ent.insert(0, str(item.get('duration', 0)))
+            dur_ent.bind("<KeyRelease>", self._mark_dirty)
             dur_ent.pack(side="left", padx=5)
             self.duration_entries.append(dur_ent)
 
@@ -233,6 +269,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             ctk.CTkLabel(device_row, text="Speaker:", font=("Arial", 11)).pack(side="left")
             saved_device = item.get('device', None)
             device_var = ctk.StringVar(value=saved_device if saved_device else "System Default")
+            device_var.trace_add("write", self._mark_dirty)
             device_menu = ctk.CTkOptionMenu(device_row, variable=device_var,
                                             values=output_devices, width=250)
             device_menu.pack(side="left", padx=5)
@@ -242,6 +279,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             ctk.CTkLabel(device_row, text="Vol%:", font=("Arial", 11)).pack(side="left", padx=(15, 0))
             vol_ent = ctk.CTkEntry(device_row, width=40)
             vol_ent.insert(0, str(item.get('volume', 0)))
+            vol_ent.bind("<KeyRelease>", self._mark_dirty)
             vol_ent.pack(side="left", padx=5)
             self.volume_entries.append(vol_ent)
 
@@ -249,6 +287,7 @@ class AudioSequenceEditor(ctk.CTkToplevel):
             ctk.CTkLabel(device_row, text="Gap (s):", font=("Arial", 11)).pack(side="left", padx=(15, 0))
             gap_ent = ctk.CTkEntry(device_row, width=40)
             gap_ent.insert(0, str(item.get('gap', 0)))
+            gap_ent.bind("<KeyRelease>", self._mark_dirty)
             gap_ent.pack(side="left", padx=5)
             self.gap_entries.append(gap_ent)
 
@@ -269,34 +308,20 @@ class AudioSequenceEditor(ctk.CTkToplevel):
         self.sync_data()
         current = self.action.data[idx]["mode"]
         self.action.data[idx]["mode"] = "Sequential" if current == "Random" else "Random"
+        self._mark_dirty()
         self.update_list()
 
     def remove_item(self, idx):
         self.action.data.pop(idx)
+        self._mark_dirty()
         self.update_list()
 
     def exit_no_save(self):
-        """Close the editor without saving. Remove empty actions."""
+        """Close the editor. Pending entry edits are discarded; saved edits are kept."""
         if not self.action.data:
             if self.action in self.parent_app.actions:
                 self.parent_app.actions.remove(self.action)
                 self.parent_app.safe_status_update("Empty audio action discarded.")
-        self.parent_app.update_display()
-        self.parent_app._audio_editor = None
-        self.destroy()
-
-    def on_closing(self):
-        """Final sync and cleanup before closing the window."""
-        self.sync_data()
-
-        # If the user didn't add any files or folders, delete the action
-        if not self.action.data:
-            if self.action in self.parent_app.actions:
-                self.parent_app.actions.remove(self.action)
-                self.parent_app.safe_status_update("Empty audio action discarded.")
-        else:
-            self.parent_app._mark_dirty()
-
         self.parent_app.update_display()
         self.parent_app._audio_editor = None
         self.destroy()

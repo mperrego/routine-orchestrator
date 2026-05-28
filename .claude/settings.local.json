@@ -48,7 +48,8 @@
       "Bash(echo \"EXIT=$?\")",
       "Bash(./venv/Scripts/python.exe --version)",
       "PowerShell(Get-Process *)",
-      "Bash(./venv/Scripts/python.exe tools/tracker_sync.py read)"
+      "Bash(./venv/Scripts/python.exe tools/tracker_sync.py read)",
+      "Bash(./venv/Scripts/python.exe *)"
     ],
     "defaultMode": "auto"
   }

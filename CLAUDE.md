@@ -22,7 +22,7 @@ Python 3.12 · customtkinter · tkinter · pygame · pydub · gTTS · pyttsx3 ·
 
 ## Current status
 - Version: see `version.txt` (canonical) — currently v9.4
-- Currently working on: Pause/Resume + per-file Gap shipped on 2026-05-22 (commit 73c9830); awaiting next task.
+- Currently working on: Save/Exit dirty-tracking refactor in AudioSequenceEditor shipped 2026-05-28; awaiting next task.
 - All core features working: GUI build/edit/save/load/run, audio (MP3/WAV/M4A), Cast playback, TTS announcements, Wait actions, external scripts, CLI auto-run, folder bookmarking, timed playback, status bar, title bar with unsaved-changes indicator, Save/Save As split, speaker fallback
 
 ## HARD RULES — non-negotiable
