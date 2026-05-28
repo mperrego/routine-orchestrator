@@ -22,6 +22,9 @@ __pycache__/
 orchestrator.pid
 orchestrator.stop
 
+# Trigger logs (TRIGGERcmd voice-fired runs)
+logs/
+
 # OS-specific
 Thumbs.db
 Desktop.ini

@@ -22,8 +22,11 @@ Python 3.12 · customtkinter · tkinter · pygame · pydub · gTTS · pyttsx3 ·
 
 ## Current status
 - Version: see `version.txt` (canonical) — currently v9.4
-- Currently working on: Save/Exit dirty-tracking refactor in AudioSequenceEditor shipped 2026-05-28; awaiting next task.
+- Currently working on: Cross-machine path re-anchor helper + trigger logging shipped 2026-05-28; awaiting next task.
 - All core features working: GUI build/edit/save/load/run, audio (MP3/WAV/M4A), Cast playback, TTS announcements, Wait actions, external scripts, CLI auto-run, folder bookmarking, timed playback, status bar, title bar with unsaved-changes indicator, Save/Save As split, speaker fallback
+
+## Conformance
+New code added on or after 2026-05-28 follows `$ECOSYSTEM_CORE_PATH/architectural_design_standards.md` (the canonical single-source doc — read directly from ecosystem-core, never copied). Legacy modules (`Orchestrator_main_gui.py`, `editors.py`, `audio_engine.py`, etc.) are grandfathered — no back-engineering. New utilities live under `src/` and follow Rules 6/7/9/10 (single responsibility, structured return, project-agnostic args, no silent failures).
 
 ## HARD RULES — non-negotiable
 - Never read, print, or log secrets (or `.env` contents) under any circumstance
@@ -65,6 +68,7 @@ Full integration details → `docs/ecosystem_integration.md`.
 
 | Doc | When to read |
 |---|---|
+| `$ECOSYSTEM_CORE_PATH/architectural_design_standards.md` | Before writing any new code (new code must conform; see Conformance above) |
 | `docs/architecture.md` | Project structure, action types, threading model, CLI auto-run |
 | `docs/coding_standards.md` | Code style, GUI/Tkinter conventions, full "Do not" list |
 | `docs/rules_from_mistakes.md` | Before fixing recurring bugs |

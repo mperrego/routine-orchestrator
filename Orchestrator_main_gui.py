@@ -19,6 +19,8 @@ import json
 import tkinter as tk
 import time
 
+from src.utils.paths import reanchor_my_drive_path
+
 # -- Ecosystem sync ------------------------------------------------
 try:
     ECOSYSTEM_CORE = os.environ.get('ECOSYSTEM_CORE_PATH', '')
@@ -169,6 +171,7 @@ class RoutineApp(ctk.CTk):
         if os.path.exists(path):
             with open(path, 'r') as f:
                 data = json.load(f)
+            self._reanchor_routine_data(data)
             self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
             self.update_display()
             self.safe_status_update(f"CLI Load: {filename}")
@@ -531,6 +534,7 @@ class RoutineApp(ctk.CTk):
         try:
             with open(routine_path, 'r') as f:
                 data = json.load(f)
+            self._reanchor_routine_data(data)
             nested_actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
         except Exception as e:
             self.safe_status_update(f"ERROR loading routine: {e}")
@@ -633,10 +637,12 @@ class RoutineApp(ctk.CTk):
             try:
                 with open(filename, 'r') as f:
                     data = json.load(f)
-                
+
+                self._reanchor_routine_data(data)
+
                 # We map the JSON "wait" key back to "wait_on_completion"
                 self.actions = [
-                    Action(i['type'], i['data'], i.get('wait', True)) 
+                    Action(i['type'], i['data'], i.get('wait', True))
                     for i in data
                 ]
                 
@@ -872,15 +878,44 @@ class RoutineApp(ctk.CTk):
             
             threading.Thread(target=self.run_routine, daemon=True).start()
 
+    def _reanchor_path(self, p):
+        """Apply reanchor_my_drive_path; fall back to original on skipped/error."""
+        if not isinstance(p, str) or not p:
+            return p
+        result = reanchor_my_drive_path(p)
+        if result['status'] == 'success':
+            return result['data']['path']
+        return p
+
+    def _reanchor_routine_data(self, data):
+        """Re-anchor My Drive paths inside a loaded routine's action list (in place)."""
+        if not isinstance(data, list):
+            return data
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            atype = item.get('type')
+            if atype == 'Audio' and isinstance(item.get('data'), list):
+                for entry in item['data']:
+                    if isinstance(entry, dict) and 'path' in entry:
+                        entry['path'] = self._reanchor_path(entry['path'])
+            elif atype == 'Script' and isinstance(item.get('data'), str):
+                item['data'] = self._reanchor_path(item['data'])
+        return data
+
     def load_settings(self):
         """Load settings including recent files and saved speakers."""
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, 'r') as f:
                     settings = json.load(f)
-                    self.last_audio_dir = settings.get("last_audio_dir", self.base_dir)
-                    self.last_script_dir = settings.get("last_script_dir", self.base_dir)
-                    self.recent_files = settings.get("recent_files", [])[:5]
+                    self.last_audio_dir = self._reanchor_path(
+                        settings.get("last_audio_dir", self.base_dir))
+                    self.last_script_dir = self._reanchor_path(
+                        settings.get("last_script_dir", self.base_dir))
+                    self.recent_files = [
+                        self._reanchor_path(p) for p in settings.get("recent_files", [])[:5]
+                    ]
                     self.saved_speakers = settings.get("saved_speakers", [])
             except Exception:
                 self.last_audio_dir, self.last_script_dir = self.base_dir, self.base_dir
@@ -965,7 +1000,9 @@ class RoutineApp(ctk.CTk):
             try:
                 with open(path, 'r') as f:
                     data = json.load(f)
-                
+
+                self._reanchor_routine_data(data)
+
                 # Reconstruct the actions from the JSON data
                 self.actions = [Action(i['type'], i['data'], i.get('wait', True)) for i in data]
                 

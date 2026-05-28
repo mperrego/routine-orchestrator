@@ -49,7 +49,10 @@
       "Bash(./venv/Scripts/python.exe --version)",
       "PowerShell(Get-Process *)",
       "Bash(./venv/Scripts/python.exe tools/tracker_sync.py read)",
-      "Bash(./venv/Scripts/python.exe *)"
+      "Bash(./venv/Scripts/python.exe *)",
+      "Bash(Get-Content *)",
+      "Bash(cmd //c \"triggers\\\\stop.cmd\")",
+      "Bash(cmd *)"
     ],
     "defaultMode": "auto"
   }
