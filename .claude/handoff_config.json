@@ -1,0 +1,11 @@
+{
+  "tracker_read": "Run: `venv/Scripts/python.exe tools/tracker_sync.py read`. Uses ecosystem service account (GOOGLE_SHEETS_CREDS_PATH env var), no browser auth. If it errors with 'give Editor access', surface verbatim so the user can share the sheet with the service account email; do not retry blindly. Tracker URL for reference (auth-walled, do not WebFetch): https://docs.google.com/spreadsheets/d/1jWYuZMoj-3VnyywgbnIzmzrvjAgyne8spazrEOl4TM8/edit",
+  "tracker_log_commit": "Run: `venv/Scripts/python.exe tools/tracker_sync.py log-commit --summary \"{summary}\" --in-progress \"{in_progress}\" --next-steps \"{next_steps}\"`. Appends a row (date | summary | in-progress | next steps) to the Session Log tab.",
+  "version_sync": {
+    "source": "Read the 'Current status' section in CLAUDE.md and extract the version number (e.g. v9.4 -> 9.4). Strip the 'v' prefix.",
+    "target": "version.txt at project root. This ensures notify_mothership.yml dispatches the correct version to ecosystem-core on push, which updates manifest.json and the Master Tracker spreadsheet automatically."
+  },
+  "mutable_claudemd_field": "Currently working on",
+  "pre_summary_step": null,
+  "summary_extra_sections": []
+}
