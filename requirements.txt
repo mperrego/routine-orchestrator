@@ -20,5 +20,6 @@ pypiwin32==223
 pyttsx3==2.99
 pywin32==311
 requests==2.32.5
+truststore==0.10.4
 urllib3==2.6.3
 zeroconf==0.148.0

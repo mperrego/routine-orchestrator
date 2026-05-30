@@ -7,6 +7,9 @@ Usage:
     python tools/tracker_sync.py read
     python tools/tracker_sync.py log-commit --summary "..." [--next-steps "..."] [--in-progress "..."]
 """
+import truststore
+truststore.inject_into_ssl()
+
 import argparse
 import json
 import os
