@@ -7,6 +7,12 @@ CLI arguments through so Alexa voice triggers (python bootstrap.py RoutineName) 
 unchanged.
 """
 
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 import os
 import sys
 from pathlib import Path
