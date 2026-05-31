@@ -341,6 +341,10 @@ def reset_to_default_device():
     """Switches the mixer back to the system default output device."""
     switch_output_device(None)
 
+def get_current_device():
+    """Returns the device the mixer is currently routed to (None = system default)."""
+    return _current_device
+
 def play_audio(file_path, device=None):
     """Plays audio via pygame. Handles conversion and optional device routing."""
     try:

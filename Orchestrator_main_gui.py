@@ -349,6 +349,11 @@ class RoutineApp(ctk.CTk):
         if os.path.exists(self.stop_signal_file):
             os.remove(self.stop_signal_file)
 
+        # Snapshot the mixer's pre-routine device so we can restore it on exit.
+        # Makes routines transactional w.r.t. the app's pygame routing - if you
+        # were on Speaker A before the routine, you're back on Speaker A after.
+        self._pre_routine_device = audio_engine.get_current_device()
+
         # UI State Management - Disable Play, Enable Stop/Skip
         self.after(0, lambda: self.play_btn.configure(state="disabled"))
         self.after(0, lambda: self.stop_btn.configure(state="normal"))
@@ -399,6 +404,8 @@ class RoutineApp(ctk.CTk):
         self.is_running = False
         self._cleanup_signal_files()
         self._reset_pause_state()
+        # Restore the mixer's pre-routine device (snapshot taken at start of run_routine)
+        audio_engine.switch_output_device(self._pre_routine_device)
         self.safe_status_update("Ready")
 
         # Reset UI Buttons
